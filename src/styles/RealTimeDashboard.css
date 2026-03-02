@@ -1,0 +1,166 @@
+/* RealTimeDashboard.css */
+
+/* Top stats boxes */
+.stats-box {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.stats-box h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #374151; /* gray-700 */
+  margin-bottom: 0.2rem;
+}
+
+.stats-box p {
+  font-size: 1.8rem;
+  font-weight: bold;
+}
+
+.stats-logged {
+  background: #d1fae5; /* green-100 */
+  border-left: 5px solid #10b981; /* green-500 */
+  color: #065f46; /* green-800 */
+}
+
+.stats-incall {
+  background: #bbf7d0; /* green-200 */
+  border-left: 5px solid #047857; /* green-600 */
+  color: #064e3b; /* green-900 */
+}
+
+.stats-waiting {
+  background: #bfdbfe; /* blue-200 */
+  border-left: 5px solid #2563eb; /* blue-600 */
+  color: #1e40af; /* blue-800 */
+}
+
+.stats-paused {
+  background: #fecaca; /* red-200 */
+  border-left: 5px solid #dc2626; /* red-600 */
+  color: #991b1b; /* red-800 */
+}
+
+/* Agent card */
+
+.flex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem; /* same as gap-6 */
+  justify-content: flex-start;
+}
+
+.agent-card {
+  flex: 1 1 calc(20% - 1.5rem); /* 5 cards per row */
+  max-width: calc(20% - 1.5rem);
+  background: #F3F4F6;
+  color: black;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease-in-out;
+}
+
+.agent-card:hover {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
+.agent-icon {
+  display: flex;
+  justify-content: center;
+}
+
+.agent-name {
+  text-align: center;
+  font-weight: bold;
+  font-size: 1.1rem;
+  margin-bottom: 0.1rem;
+  color: black;
+}
+
+.agent-meta {
+  display: flex;
+  justify-content: center; /* center horizontally */
+  gap: 1rem;
+}
+
+.agent-meta span {
+  font-weight: 500;
+}
+
+.agent-id,
+.skills {
+  font-size: 0.85rem;
+  color: #111827; /* gray text */
+}
+
+
+.agent-details {
+  font-size: 0.85rem;
+  line-height: 0.8;
+}
+
+.agent-details span {
+  font-weight: 500;
+}
+
+.status-row {
+  display: flex;
+  justify-content: center; /* center horizontally */
+  align-items: center;
+  gap: 1rem;
+}
+
+.status-row p {
+  font-size: 0.85rem;
+  color: #111827;
+}
+
+.calls-row {
+  display: flex;
+  justify-content: center; /* center both */
+  align-items: center;
+  gap: 1rem;
+}
+
+.calls-row p {
+  font-size: 0.85rem;
+  color: #111827;
+}
+
+
+/* Circle icons */
+.status-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-paused {
+  background: #dc2626; /* red */
+}
+
+.status-incall {
+  background: #10b981; /* green */
+}
+
+.status-closer {
+  background: #f59e0b; /* yellow */
+}
+
+.status-default {
+  background: #6b7280; /* gray */
+}
+
+
+.refresh-timer {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+

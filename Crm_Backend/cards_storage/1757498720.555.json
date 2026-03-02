@@ -1,0 +1,52 @@
+[
+  {
+    "id": 0,
+    "query": "Order & Shipping Related Query",
+    "steps": []
+  },
+  {
+    "id": 1,
+    "query": "Order Status or Delivery Status check.",
+    "steps": [
+      "Search in Shopify with Order ID OR Registered Contact number.",
+      "You will find tracking details. Click on the tracking number.",
+      "Open tracking and view estimated date of delivery."
+    ]
+  },
+  {
+    "id": 2,
+    "query": "Why is my order late? Or if the customer did not receive the order on the estimated time date.",
+    "steps": [
+      "Open the tracking link, check the status.",
+      "If in transit, inform him the actual EDD.",
+      "If EDD has passed, inform us for further process.",
+      "If shows any other reason (delayed due to natural calamity OR Damaged in transit etc.) inform the us to check the same from our side."
+    ]
+  },
+  {
+    "id": 3,
+    "query": "Shipping Charge Query",
+    "steps": [
+      "No shipping charges on pre-paid order Above 250.",
+      "In case order value is below 250 then minimal INR 25 Shipping charges get applied. (COD & Pre-Paid)",
+      "COD Charge is 49 INR."
+    ]
+  },
+  {
+    "id": 4,
+    "query": "COD order Cancel",
+    "steps": [
+      "Check in Shopify, if order is not shipped, inform us to cancel it.",
+      "If order Is shipped, We Can't Cancel it, ask customer to Refuse At The Time Of Delivery."
+    ]
+  },
+  {
+    "id": 5,
+    "query": "Prepaid order Cancel",
+    "steps": [
+      "Check in Shopify, if order is not shipped, inform us to cancel it.",
+      "If order Is shipped, We Can't Cancel it, ask customer to Refuse At The Time Of Delivery.  We Will Initiate Refund, Once The Order Is Marked As Returned.",
+      "... (truncated for brevity in code) ..."
+    ]
+  }
+]
