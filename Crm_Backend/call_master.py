@@ -1,6 +1,7 @@
 # Crm_Backend/call_master.py
 import json
 import logging
+import os
 from http.client import HTTPException
 from io import BytesIO
 
@@ -1689,6 +1690,52 @@ def fetch_resolution(payload: ResolutionRequest, db: Session = Depends(get_db)):
     }
 
 ############################
+
+class TrainingHubRequest(BaseModel):
+    client_id: int
+
+
+@router.post("/trainning_hub")
+def trainning_hub(payload: TrainingHubRequest, db: Session = Depends(get_db)):
+    try:
+        client_id = payload.client_id
+
+        query = text("""
+            SELECT field1 
+            FROM training_master 
+            WHERE ClientId = :client_id
+        """)
+
+        result = db.execute(query, {"client_id": client_id}).fetchall()
+
+        TRAINING_FILE_BASE_URL = os.getenv("TRAINING_FILE_BASE_URL")
+
+        # ✅ Format Response
+        data = []
+        for row in result:
+            file_name = row[0]
+
+            file_url = f"{TRAINING_FILE_BASE_URL}/client_{client_id}/{file_name}"
+
+            data.append({
+                "file_name": file_name,
+                "file_url": file_url
+            })
+
+        return {
+            "status": "success",
+            "client_id": client_id,
+            "count": len(data),
+            "data": data
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
 
 
 # Runs trigger_alerts() every 1 minute.

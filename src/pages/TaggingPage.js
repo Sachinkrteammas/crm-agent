@@ -53,6 +53,9 @@ export default function AgentDashboard() {
   const [callHistory, setCallHistory] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  const [showTrainingHub, setShowTrainingHub] = useState(false);
+  const [trainingFiles, setTrainingFiles] = useState([]);
+
   const rawPhone = searchParams.get("phone_number");
   const msisdn = rawPhone
   ? rawPhone.replace(/\D/g, "").slice(-10)
@@ -154,12 +157,34 @@ if (diffSeconds <= 0) {
       }
     };
 
+    const fetchTrainingHub = async () => {
+      try {
+        setLoading(true);
+
+        const res = await api.post("/call/trainning_hub", {
+          client_id: companyId
+        });
+
+        setTrainingFiles(res.data.data || []);
+      } catch (err) {
+        console.error("Training hub error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
 
 useEffect(() => {
   if (showHistory) {
     fetchCallHistory();
   }
 }, [showHistory]);
+
+useEffect(() => {
+  if (showTrainingHub) {
+    fetchTrainingHub();
+  }
+}, [showTrainingHub]);
 
 
   // Fetch fields for the call
@@ -371,9 +396,13 @@ useEffect(() => {
     const inputType = typeMap[field.DefinedField] || "text";
 
     if (field.FieldType === "TextBox") {
+      // ✅ Detect date fields by name
+      const isDateField =
+        field.FieldName.toLowerCase().includes("date");
+
       return (
         <input
-          type={inputType}
+          type={isDateField ? "date" : "text"}
           className="form-control"
           value={formData[field.FieldName] || ""}
           placeholder={`Enter ${field.FieldName}`}
@@ -383,6 +412,18 @@ useEffect(() => {
     }
 
     if (field.FieldType === "TextArea") {
+       const isDateField = field.FieldName.toLowerCase().includes("date");
+
+      if (isDateField) {
+        return (
+          <input
+            type="date"
+            className="form-control"
+            value={formData[field.FieldName] || ""}
+            onChange={(e) => handleChange(field.FieldName, e.target.value)}
+          />
+        );
+      }
       return (
         <textarea
           className="form-control"
@@ -1495,7 +1536,12 @@ const handleSave = async () => {
             </button>
 
             <button className="btn outline">Lead Generation</button>
-            <button className="btn outline">Training Hub</button>
+            <button
+              className="btn outline"
+              onClick={() => setShowTrainingHub(true)}
+            >
+              Training Docs
+            </button>
           </div>
         </div>
 
@@ -1716,6 +1762,95 @@ const handleSave = async () => {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+{showTrainingHub && (
+  <div className="modal-overlay">
+    <div className="modal-lg" style={{ borderRadius: "12px", overflow: "hidden" }}>
+
+      {/* Header */}
+      <div
+        className="modal-header"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "16px 20px",
+          background: "#f8f9fa",
+          borderBottom: "1px solid #ddd"
+        }}
+      >
+        <h3 style={{ margin: 0 }}>Training Docs</h3>
+        <button
+          onClick={() => setShowTrainingHub(false)}
+          style={{
+            border: "none",
+            background: "#e0e0e0",
+            padding: "6px 12px",
+            borderRadius: "6px",
+            cursor: "pointer"
+          }}
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="modal-body" style={{ padding: "10px 0", background: "#ffffff"  }}>
+        {loading ? (
+          <p style={{ padding: "20px" }}>Loading...</p>
+        ) : trainingFiles.length === 0 ? (
+          <p style={{ padding: "20px" }}>No files found</p>
+        ) : (
+          <div>
+            {trainingFiles.map((file, index) => (
+              <div
+                key={index}
+                onClick={() => window.open(file.file_url, "_blank")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "12px 20px",
+                  borderBottom: "1px solid #eee",
+                  cursor: "pointer",
+                  color: "white",
+                  transition: "background 0.2s"
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "#f5f7fa")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "white")
+                }
+              >
+                {/* Index */}
+                <div style={{ width: "30px", color: "#888" }}>
+                  {index + 1}
+                </div>
+
+                {/* File Icon */}
+                <div style={{ marginRight: "10px", fontSize: "18px" }}>
+                  📄
+                </div>
+
+                {/* File Name */}
+                <div
+                  style={{
+                    color: "#007bff",
+                    textDecoration: "underline",
+                    flex: 1,
+                    wordBreak: "break-all"
+                  }}
+                >
+                  {file.file_name}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
