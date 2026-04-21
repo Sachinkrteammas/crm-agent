@@ -1,7 +1,7 @@
 # from fastapi import APIRouter, Depends, HTTPException
 # from sqlalchemy.orm import Session
 # from sqlalchemy import text
-# from database import get_db4
+# from database import get_db
 
 
 # router = APIRouter()
@@ -36,7 +36,7 @@
 
 
 # @router.get("/dynamic-menu/{company_id}")
-# def get_dynamic_menu(company_id: int, db: Session = Depends(get_db4)):
+# def get_dynamic_menu(company_id: int, db: Session = Depends(get_db)):
 #     # 1. Get allowed pages from logincreation_master
 #     rights_query = text("""
 #         SELECT user_right FROM logincreation_master WHERE create_id = :company_id
@@ -75,7 +75,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from database import get_db4
+from database import get_db
 
 router = APIRouter(prefix="/pages", tags=["Pages"])
 
@@ -107,7 +107,7 @@ def build_menu_tree(rows):
 
 
 # @router.get("/dynamic-menu/{company_id}")
-# def get_dynamic_menu(company_id: int, db: Session = Depends(get_db4)):
+# def get_dynamic_menu(company_id: int, db: Session = Depends(get_db)):
 #     # 1. Get allowed pages from logincreation_master
 #     rights_query = text("""
 #         SELECT user_right FROM logincreation_master WHERE create_id = :company_id
@@ -141,7 +141,7 @@ def build_menu_tree(rows):
 
 
 # @router.get("/dynamic-menu/{company_id}")
-# def get_dynamic_menu(company_id: int, db: Session = Depends(get_db4)):
+# def get_dynamic_menu(company_id: int, db: Session = Depends(get_db)):
 #     # 🔹 Super-Admin: bypass rights, show ALL menus
 #     if company_id == 0:   # 👈 special marker for superadmin
 #         query = text("""
@@ -184,7 +184,7 @@ def build_menu_tree(rows):
 
 # Its Working For Super Admin with (companyId = 0) and Working For client with Company_id
 @router.get("/dynamic-menu/{company_id}")
-def get_dynamic_menu(company_id: int, db: Session = Depends(get_db4)):
+def get_dynamic_menu(company_id: int, db: Session = Depends(get_db)):
     """
     Get menu items:
       - Super Admin (company_id=0) → return ALL pages (flat, no tree).

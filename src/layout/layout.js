@@ -51,21 +51,24 @@ const Layout = () => {
 
 
 useEffect(() => {
-    const storedUsername = localStorage.getItem("username");
-    const storedRole = localStorage.getItem("role");
+  const storedUsername = localStorage.getItem("username");
+  const storedRole = localStorage.getItem("role");
 
-    if (storedUsername) setUsername(storedUsername);
-    if (storedRole) setRole(storedRole);
+  if (storedUsername) setUsername(storedUsername);
+  if (storedRole) setRole(storedRole);
 
-    if (storedRole === "agent") {
-      // ✅ Keep all query params, no mandatory checks
-      const targetUrl = `/tagging${location.search}`;
+  if (storedRole === "agent") {
+    const allowedPaths = ["/tagging", "/offline_tagging"];
 
-      if (location.pathname + location.search !== targetUrl) {
-        navigate(targetUrl, { replace: true });
-      }
+    const isAllowed = allowedPaths.some((path) =>
+      location.pathname.startsWith(path)
+    );
+
+    if (!isAllowed) {
+      navigate(`/tagging${location.search}`, { replace: true });
     }
-  }, [navigate, location]);
+  }
+}, [navigate, location]);
 
   // ✅ Sidebar behavior (skip if agent)
   useEffect(() => {
@@ -117,7 +120,7 @@ if (role === "agent") {
 
         {/* Header (same as normal users) */}
         <nav
-  className="layout-navbar container-xxl navbar-detached navbar navbar-expand-xl align-items-center bg-navbar-theme"
+  className="layout-navbar container-fluid navbar-detached navbar navbar-expand-xl align-items-center bg-navbar-theme"
   id="layout-navbar"
   style={{
     width: "100%",
@@ -151,7 +154,7 @@ if (role === "agent") {
           >
             <div className="avatar avatar-online">
               <img
-                src="/assets/img/avatars/1.png"
+                src="/assets/img/avatars/profile.png"
                 alt="user"
                 className="rounded-circle"
               />
@@ -164,7 +167,7 @@ if (role === "agent") {
                   <div className="flex-shrink-0 me-2">
                     <div className="avatar avatar-online">
                       <img
-                        src="/assets/img/avatars/1.png"
+                        src="/assets/img/avatars/profile.png"
                         alt="user"
                         className="rounded-circle"
                       />
@@ -872,7 +875,7 @@ if (role === "agent") {
                     href="#"
                     data-bs-toggle="dropdown">
                     <div className="avatar avatar-online">
-                      <img src="assets/img/avatars/1.png" alt className="rounded-circle" />
+                      <img src="assets/img/avatars/profile.png" alt className="rounded-circle" />
                     </div>
                   </a>
                   <ul className="dropdown-menu dropdown-menu-end">
@@ -881,7 +884,7 @@ if (role === "agent") {
                         <div className="d-flex align-items-center">
                           <div className="flex-shrink-0 me-2">
                             <div className="avatar avatar-online">
-                              <img src="assets/img/avatars/1.png" alt className="rounded-circle" />
+                              <img src="assets/img/avatars/profile.png" alt className="rounded-circle" />
                             </div>
                           </div>
                           <div className="flex-grow-1">

@@ -8,6 +8,20 @@ export default function AgentDashboard() {
   console.log(formData,"formData===")
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState("");
+  const [showUntaggedModal, setShowUntaggedModal] = useState(false);
+  const [untaggedCalls, setUntaggedCalls] = useState([]);
+  const [selectedCallId, setSelectedCallId] = useState("");
+  const [selectedCallData, setSelectedCallData] = useState(null);
+  const [callDate, setCallDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [performance, setPerformance] = useState({
+    total_calls: 0,
+    tagged_calls: 0,
+    not_tagged_calls: 0
+  });
+  const [showTrainingHub, setShowTrainingHub] = useState(false);
+  const [trainingFiles, setTrainingFiles] = useState([]);
 
   // Scenario states (Level 1 → 5)
   const [scenarioList, setScenarioList] = useState([]);
@@ -138,7 +152,12 @@ if (diffSeconds <= 0) {
 
 
     const fetchCallHistory = async () => {
+      if (!companyId || companyId === "null") {
+        alert("Please Select Client.");
+        return;
+      }
       try {
+        setShowHistory(true)
         setLoading(true);
         const res = await api.post(
           "/call/call-history",
@@ -146,7 +165,7 @@ if (diffSeconds <= 0) {
           {
             params: {
               clientId: companyId, // companyId → clientId
-              msisdn: phone
+              agent_id: agent_id
             }
           }
         );
@@ -159,17 +178,51 @@ if (diffSeconds <= 0) {
     };
 
 
+    const fetchTrainingHub = async () => {
+      if (!companyId || companyId === "null") {
+        alert("Select Client");
+        return;
+        }
+
+        setShowTrainingHub(true);
+        
+          try {
+            setLoading(true);
+    
+            const res = await api.post("/call/trainning_hub", {
+              client_id: companyId
+            });
+    
+            setTrainingFiles(res.data.data || []);
+          } catch (err) {
+            console.error("Training hub error:", err);
+          } finally {
+            setLoading(false);
+          }
+        };
+
+
 useEffect(() => {
   if (showHistory) {
     fetchCallHistory();
   }
 }, [showHistory]);
 
+useEffect(() => {
+  if (showTrainingHub) {
+    fetchTrainingHub();
+  }
+}, [showTrainingHub]);
+
 
 useEffect(() => {
   const fetchClients = async () => {
     try {
-      const res = await api.get("/agents/clients-rights");
+      const res = await api.get("/agents/agent-clients-rights", {
+        params: {
+          agent_id: agent_id
+        }
+      });
 
       const sortedClients = res.data.sort((a, b) =>
         a.company_name.localeCompare(b.company_name, "en", {
@@ -185,6 +238,55 @@ useEffect(() => {
 
   fetchClients();
 }, []);
+
+
+  useEffect(() => {
+    const fetchUntaggedCalls = async () => {
+      if (!selectedClient || !agent_id) return;
+
+      try {
+
+        const res = await api.get("/report/untagged-calls", {
+          params: {
+            client_id: selectedClient,
+            agent_id: agent_id,
+            call_date: callDate,
+          },
+        });
+
+        setUntaggedCalls(res.data.data || []);
+      } catch (err) {
+        console.error("Error fetching untagged calls:", err);
+      }
+    };
+
+    fetchUntaggedCalls();
+  }, [selectedClient]);
+
+
+  useEffect(() => {
+    if (!showUntaggedModal) return;
+
+    const fetchUntaggedCalls = async () => {
+      if (!selectedClient || !agent_id || !callDate) return;
+
+      try {
+        const res = await api.get("/report/untagged-calls", {
+          params: {
+            client_id: selectedClient,
+            agent_id: agent_id,
+            call_date: callDate,
+          },
+        });
+
+        setUntaggedCalls(res.data.data || []);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchUntaggedCalls();
+  }, [showUntaggedModal, selectedClient, callDate]);
 
 
 
@@ -211,6 +313,28 @@ useEffect(() => {
       console.error("Error fetching fields:", err)
     );
 }, [selectedClient]);
+
+
+
+  useEffect(() => {
+    const fetchPerformance = async () => {
+      try {
+        const agent_id = localStorage.getItem("id");
+
+        const res = await api.post("/report/agent_call_summary", {
+          date: callDate,
+          agent_id: agent_id
+        });
+
+        setPerformance(res.data);
+      } catch (err) {
+        console.error("Performance API error:", err);
+      }
+    };
+
+    fetchPerformance();
+  }, [callDate]);
+
 
 
   // Fetch Level 1 scenarios
@@ -1111,20 +1235,25 @@ const handleSaveMechanism = () => {
 
 
 const handleSave = async () => {
+  if (!selectedCallData?.Id) {
+    alert("Please select an untagged call first");
+    return;
+  }
   try {
     const payload = {
       ...formData,
+      Id: selectedCallData?.Id || null,
       Scenario: selectedScenarioLabel || null,
       Scenario1: selectedScenario1Label || null,
       Scenario2: selectedScenario2Label || null,
       Scenario3: selectedScenario3Label || null,
       Scenario4: selectedScenario4Label || null,
 
-      LeadId: lead_id || null,
-      AgentId: username || null,
-      CallType: "offline",
-      CallDate: new Date().toISOString().slice(0, 19).replace("T", " "),
-      MSISDN: phone.length > 10 ? phone.slice(-10) : phone,
+      // LeadId: lead_id || null,
+      // AgentId: username || null,
+      CallType: "Offline Tagging",
+      // CallDate: new Date().toISOString().slice(0, 19).replace("T", " "),
+      // MSISDN: phone.length > 10 ? phone.slice(-10) : phone,
       callcreated: "DialDesk - "+ username
     };
 
@@ -1515,15 +1644,25 @@ const handleSave = async () => {
         <div className="card_tagging">
           <div className="card-content vertical">
             <button className="btn primary">Offline Call Tagging</button>
-            <button className="btn outline" onClick={() => setShowHistory(true)}>
+            <button className="btn outline" onClick={fetchCallHistory}>
               Call History
             </button>
 
             <button className="btn outline">Lead Generation</button>
-            <button className="btn outline">Training Hub</button>
+            <button
+              className="btn outline"
+              onClick={fetchTrainingHub}
+            >
+              Training Docs
+            </button>
 
 
-            <div className="col-md-12 text-center">
+            
+
+          </div>
+        </div>
+
+        <div className="col-md-12 text-center">
                 <label className="form-label fw-semibold">
                   Select Client
                 </label>
@@ -1544,19 +1683,101 @@ const handleSave = async () => {
                     </option>
                   ))}
                 </select>
+                <input
+                  type="date"
+                  value={callDate}
+                  onChange={(e) => setCallDate(e.target.value)}
+                  className="form-control mt-2"
+                />
+                <button
+                  className="btn outline mt-2"
+                  onClick={() => setShowUntaggedModal(true)}
+                  disabled={!selectedClient}
+                >
+                  View Untagged Calls
+                </button>
               </div>
 
+        {showUntaggedModal && (
+        <div className="modal-overlay">
+          <div className="modal-xl">
+            <div className="modal-header">
+              <h3>Untagged Calls</h3>
+              <button onClick={() => setShowUntaggedModal(false)}>Close</button>
+            </div>
+
+            <div className="modal-body">
+              {untaggedCalls.length === 0 ? (
+                <p>No untagged calls found</p>
+              ) : (
+                <table className="table table-bordered table-sm">
+                  <thead>
+                    <tr>
+                      <th>Call ID</th>
+                      <th>Lead ID</th>
+                      <th>Phone</th>
+                      <th>Date</th>
+                      <th>Recording</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {untaggedCalls.map((call) => (
+                      <tr key={call.Id}>
+                        <td>{call.Id}</td>
+                        <td>{call.LeadId}</td>
+                        <td>{call.MSISDN}</td>
+                        <td>
+                          {new Date(call.CallDate).toLocaleString()}
+                        </td>
+
+                        <td>
+                          <a
+                            href={call.recording}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Play
+                          </a>
+                        </td>
+
+                        <td>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => {
+                              setSelectedCallId(call.Id);
+                              setSelectedCallData(call);
+                              setPhone(String(call.MSISDN || ""));
+
+                              // close modal
+                              setShowUntaggedModal(false);
+                            }}
+                          >
+                            Select
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         </div>
+      )}
 
-        <div className="card_tagging">
+        {/* Analytics Row */}
+        {/* <div className="card_tagging">
           <div className="card-content">
             <h4>Call Quality Analytics</h4>
             <p className="muted">
               Current call with Number Masking • Duration: 8:45
             </p>
 
-            {/* Analytics Row */}
+
+
+            
             <div className="analytics-col">
               <div className="analytics-item">
                 <p>
@@ -1588,20 +1809,42 @@ const handleSave = async () => {
               </div>
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* Performance */}
         <div className="card_tagging">
           <div className="card-content">
-            <h4>Today's Performance</h4>
+            <h4>
+              Performance On{" "}
+              {new Date(callDate).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+            </h4>
+
             <p>
-              Calls Handled: <b>24</b>
+              Calls Handled: <b>{performance.total_calls}</b>
             </p>
+
             <p>
-              Avg. Call Time: <b>4:32</b>
+              Tagged Calls: <b>{performance.tagged_calls}</b>
             </p>
+
             <p>
-              Success Rate: <b className="success-text">92%</b>
+              Not Tagged: <b>{performance.not_tagged_calls}</b>
+            </p>
+
+            <p>
+              Success Rate:{" "}
+              <b className="success-text">
+                {performance.total_calls > 0
+                  ? Math.round(
+                      (performance.tagged_calls / performance.total_calls) * 100
+                    )
+                  : 0}
+                %
+              </b>
             </p>
           </div>
         </div>
@@ -1620,6 +1863,31 @@ const handleSave = async () => {
           >
             <h5 className="mb-3">{authPerson}   {phone} Tags & Classification</h5>
 
+            {/* Render Select Untagged Call  */}
+            {selectedCallData && (
+            <div
+              style={{
+                marginBottom: "10px",
+                padding: "10px",
+                border: "1px solid #ddd",
+                borderRadius: "6px",
+                background: "#f9f9f9"
+              }}
+            >
+              <b>Selected Call:</b> {selectedCallData.LeadId} | {selectedCallData.MSISDN}
+
+              <br />
+
+              {/* <audio
+                controls
+                src={selectedCallData.recording}
+                style={{ width: "100%", marginTop: "5px" }}
+              /> */}
+            </div>
+          )}
+
+            {selectedCallData && (
+            <>
             <div className="row mb-3">
               <div className="col-md-4">
                 <label className="form-label fw-semibold">
@@ -1750,6 +2018,8 @@ const handleSave = async () => {
                 </button>
               </div>
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>
@@ -1787,6 +2057,96 @@ const handleSave = async () => {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+{showTrainingHub && (
+  <div className="modal-overlay">
+    <div className="modal-lg" style={{ borderRadius: "12px", overflow: "hidden" }}>
+
+      {/* Header */}
+      <div
+        className="modal-header"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "16px 20px",
+          background: "#f8f9fa",
+          borderBottom: "1px solid #ddd",
+          gap: "20px"
+        }}
+      >
+        <h3 style={{ margin: 0 }}>Training Docs</h3>
+        <button
+          onClick={() => setShowTrainingHub(false)}
+          style={{
+            border: "none",
+            background: "#e0e0e0",
+            padding: "6px 12px",
+            borderRadius: "6px",
+            cursor: "pointer"
+          }}
+        >
+          Close
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="modal-body" style={{ padding: "10px 0", background: "#ffffff"  }}>
+        {loading ? (
+          <p style={{ padding: "20px" }}>Loading...</p>
+        ) : trainingFiles.length === 0 ? (
+          <p style={{ padding: "20px" }}>No files found</p>
+        ) : (
+          <div>
+            {trainingFiles.map((file, index) => (
+              <div
+                key={index}
+                onClick={() => window.open(file.file_url, "_blank")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "12px 20px",
+                  borderBottom: "1px solid #eee",
+                  cursor: "pointer",
+                  color: "white",
+                  transition: "background 0.2s"
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "#f5f7fa")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "white")
+                }
+              >
+                {/* Index */}
+                <div style={{ width: "30px", color: "#888" }}>
+                  {index + 1}
+                </div>
+
+                {/* File Icon */}
+                <div style={{ marginRight: "10px", fontSize: "18px" }}>
+                  📄
+                </div>
+
+                {/* File Name */}
+                <div
+                  style={{
+                    color: "#007bff",
+                    textDecoration: "underline",
+                    flex: 1,
+                    wordBreak: "break-all"
+                  }}
+                >
+                  {file.file_name}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

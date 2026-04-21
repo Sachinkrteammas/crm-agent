@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
-from database import get_db4
+from database import get_db
 from typing import Dict
 
 router = APIRouter()
 
 @router.get("/clients-rights")
-def get_all_clients_rights(db: Session = Depends(get_db4)):
+def get_all_clients_rights(db: Session = Depends(get_db)):
     """
     Fetch all companies (company_id, company_name) as dictionary list
     """
@@ -18,8 +18,46 @@ def get_all_clients_rights(db: Session = Depends(get_db4)):
     return [{"company_id": row[0], "company_name": row[1]} for row in result]
 
 
+@router.get("/agent-clients-rights")
+def get_agent_clients_rights(
+    agent_id: int,
+    db: Session = Depends(get_db)
+):
+    # 1️⃣ Get ClientRights
+    rights_query = text("""
+        SELECT ClientRights 
+        FROM agent_master 
+        WHERE id = :agent_id
+    """)
+    result = db.execute(rights_query, {"agent_id": agent_id}).fetchone()
+
+    if not result or not result[0]:
+        raise HTTPException(status_code=404, detail="No client rights found")
+
+    # 2️⃣ Convert "13,103,241..." → list
+    client_ids = [int(x.strip()) for x in result[0].split(",") if x.strip()]
+
+    if not client_ids:
+        return []
+
+    # 3️⃣ Fetch matching companies
+    company_query = text(f"""
+        SELECT company_id, company_name
+        FROM registration_master
+        WHERE status = 'A'
+        AND company_id IN :client_ids
+    """)
+
+    companies = db.execute(company_query, {"client_ids": tuple(client_ids)}).fetchall()
+
+    return [
+        {"company_id": row[0], "company_name": row[1]}
+        for row in companies
+    ]
+
+
 @router.get("/clients-rights/{company_id}")
-def get_client_right(company_id: int, db: Session = Depends(get_db4)):
+def get_client_right(company_id: int, db: Session = Depends(get_db)):
     """
     Fetch single company by company_id as dictionary
     """
@@ -35,7 +73,7 @@ def get_client_right(company_id: int, db: Session = Depends(get_db4)):
 
 
 @router.post("/save")
-def create_agent(agent: dict, db: Session = Depends(get_db4)):
+def create_agent(agent: dict, db: Session = Depends(get_db)):
     try:
         query = text("""
             INSERT INTO agent_master
@@ -62,7 +100,7 @@ def create_agent(agent: dict, db: Session = Depends(get_db4)):
 
 
 @router.get("/list")
-def list_agents(db: Session = Depends(get_db4)):
+def list_agents(db: Session = Depends(get_db)):
     query = text("SELECT * FROM agent_master ORDER BY createdate DESC")
     result = db.execute(query).fetchall()
 
@@ -73,7 +111,7 @@ def list_agents(db: Session = Depends(get_db4)):
 
 
 @router.put("/{agent_id}")
-def update_agent(agent_id: int, agent: dict, db: Session = Depends(get_db4)):
+def update_agent(agent_id: int, agent: dict, db: Session = Depends(get_db)):
     try:
         query = text("""
             UPDATE agent_master
@@ -100,7 +138,7 @@ def update_agent(agent_id: int, agent: dict, db: Session = Depends(get_db4)):
 
 
 @router.delete("/{agent_id}")
-def delete_agent(agent_id: int, db: Session = Depends(get_db4)):
+def delete_agent(agent_id: int, db: Session = Depends(get_db)):
     try:
         query = text("DELETE FROM agent_master WHERE id = :id")
         result = db.execute(query, {"id": agent_id})

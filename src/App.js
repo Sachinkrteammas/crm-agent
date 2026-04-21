@@ -169,7 +169,6 @@ function App() {
       <Route path="/forgot-password" element={<ForgotPassword  />} />
       <Route path="/logout" element={<Logout />} />
       <Route path="/company_registration" element={<CompanyRegistration />} />
-     <Route path="/offline_tagging" element={<OfflineTaggingPage />} />
 
 
       <Route element={<ProtectedRoute />}>
@@ -241,6 +240,7 @@ function App() {
               <Route path="/shopify_reports" element={<ShopifyReports />} />
               <Route path="/tagging_reports" element={<TaggingReports />} />
               <Route path="/call_reports" element={<CallReports />} />
+              <Route path="/offline_tagging" element={<OfflineTaggingPage />} />
           </Route>
       </Route>
     </Routes>

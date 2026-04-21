@@ -4,7 +4,7 @@
 from fastapi import APIRouter, Form, File, UploadFile, HTTPException
 from typing import Optional, List
 import os, shutil
-from database import get_engine4
+from database import get_engine
 
 router = APIRouter()
 
@@ -126,7 +126,7 @@ def save_multiple_files(files: Optional[List[UploadFile]], prefix: str) -> str:
 #     conn = None
 #     cursor = None
 #     try:
-#         conn = get_engine4().raw_connection()
+#         conn = get_engine().raw_connection()
 #         cursor = conn.cursor()
 
 #         # Check duplicates
@@ -278,7 +278,7 @@ async def register_company(
     conn = None
     cursor = None
     try:
-        conn = get_engine4().raw_connection()
+        conn = get_engine().raw_connection()
         cursor = conn.cursor()
 
         # ✅ Dynamic duplicate check
@@ -392,7 +392,7 @@ async def list_companies():
     conn = None
     cursor = None
     try:
-        conn = get_engine4().raw_connection()
+        conn = get_engine().raw_connection()
         cursor = conn.cursor()
 
         # Fetch all columns
@@ -421,7 +421,7 @@ async def get_company(company_id: int):
     conn = None
     cursor = None
     try:
-        conn = get_engine4().raw_connection()
+        conn = get_engine().raw_connection()
         cursor = conn.cursor()
 
         # Fetch all columns for this company
@@ -455,7 +455,7 @@ async def get_company(company_id: int):
 
 # from fastapi import APIRouter, Form, File, UploadFile, HTTPException
 # from typing import Optional, List
-# from database import get_engine4
+# from database import get_engine
 # from utils import save_file, save_multiple_files  # your file helpers
 
 # router = APIRouter()
@@ -563,7 +563,7 @@ async def update_company(
         sql = f"UPDATE registration_master SET {set_clause} WHERE company_id = %(company_id)s"
         fields["company_id"] = company_id
 
-        conn = get_engine4().raw_connection()
+        conn = get_engine().raw_connection()
         cursor = conn.cursor()
         cursor.execute(sql, fields)
         conn.commit()
@@ -684,7 +684,7 @@ async def update_company(
 #         sql = f"UPDATE registration_master SET {set_clause} WHERE company_id = %(company_id)s"
 #         fields["company_id"] = company_id
 
-#         conn = get_engine4().raw_connection()
+#         conn = get_engine().raw_connection()
 #         cursor = conn.cursor()
 #         cursor.execute(sql, fields)
 #         conn.commit()

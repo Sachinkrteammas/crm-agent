@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from database import get_db2
+from database import get_db
 
 router = APIRouter()
 
 
 @router.get("/realtime-agents")
-def get_realtime_agents(campaign_id: str = "Dialdesk", db: Session = Depends(get_db2)):
+def get_realtime_agents(campaign_id: str = "Dialdesk", db: Session = Depends(get_db)):
     query = text("""
         SELECT 
             vu.full_name,

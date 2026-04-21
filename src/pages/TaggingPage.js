@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import "../styles/TaggingHistorySearchTabs.css";
 import api from "../api";
+import { useNavigate } from "react-router-dom";
 
 export default function AgentDashboard() {
   const [fields, setFields] = useState([]);
   const [formData, setFormData] = useState({});
   console.log(formData,"formData===")
+  const navigate = useNavigate();
 
   // Scenario states (Level 1 → 5)
   const [scenarioList, setScenarioList] = useState([]);
@@ -30,6 +32,12 @@ export default function AgentDashboard() {
 
   const [companyId, setCompanyId] = useState(null);
   const [authPerson, setAuthPerson] = useState("");
+  const [Id, setId] = useState(null);
+  const [performance, setPerformance] = useState({
+    total_calls: 0,
+    tagged_calls: 0,
+    not_tagged_calls: 0
+  });
   const searchParams = new URLSearchParams(window.location.search);
   const vendor_id = searchParams.get("vendor_id");
   const phone = searchParams.get("phone_number");
@@ -145,7 +153,7 @@ if (diffSeconds <= 0) {
           {
             params: {
               clientId: companyId, // companyId → clientId
-              msisdn: msisdn
+              agent_id: agent_id
             }
           }
         );
@@ -212,6 +220,77 @@ useEffect(() => {
       })
       .catch((err) => console.error("Error fetching client/fields:", err));
   }, [vendor_id]);
+
+
+  useEffect(() => {
+    if (!vendor_id) return;
+
+    api
+      .get(`/call/get_client_id/${vendor_id}`)
+      .then(async (res) => {
+        const cid = res.data.client_id;
+        setCompanyId(cid);
+
+        // ✅ Fetch latest call id using client_id + agent_id
+        const agent_id = localStorage.getItem("id");
+
+        try {
+          const latestRes = await api.get(
+            `/call/latest-call-id`,
+            {
+              params: {
+                client_id: cid,
+                agent_id: agent_id
+              }
+            }
+          );
+
+          const latestId = latestRes.data.latest_id;
+          console.log("Latest ID:", latestId);
+
+          setId(latestId); // ✅ set dynamic Id
+        } catch (err) {
+          console.error("Error fetching latest call id:", err);
+        }
+
+        // Fetch fields
+        return api.get(`/call/fields/${cid}`);
+      })
+      .then((res) => {
+        setFields(res.data);
+
+        const initialData = {};
+        res.data.forEach((field) => {
+          initialData[field.FieldName] = "";
+        });
+        setFormData(initialData);
+      })
+      .catch((err) => console.error("Error fetching client/fields:", err));
+  }, [vendor_id]);
+
+
+  useEffect(() => {
+    const fetchPerformance = async () => {
+      try {
+        const agent_id = localStorage.getItem("id");
+
+        const today = new Date().toISOString().split("T")[0]; // "2026-04-14"
+
+        const res = await api.post("/report/agent_call_summary", {
+          date: today,
+          agent_id: agent_id
+        });
+
+        setPerformance(res.data);
+      } catch (err) {
+        console.error("Performance API error:", err);
+      }
+    };
+
+    fetchPerformance();
+  }, []);
+
+
 
   // Fetch Level 1 scenarios
   useEffect(() => {
@@ -1130,17 +1209,18 @@ const handleSave = async () => {
   try {
     const payload = {
       ...formData,
+      Id: Id || null,
       Scenario: selectedScenarioLabel || null,
       Scenario1: selectedScenario1Label || null,
       Scenario2: selectedScenario2Label || null,
       Scenario3: selectedScenario3Label || null,
       Scenario4: selectedScenario4Label || null,
 
-      LeadId: lead_id || null,
-      AgentId: username || null,
-      CallType: "Inbound",
-      CallDate: new Date().toISOString().slice(0, 19).replace("T", " "),
-      MSISDN: phone.length > 10 ? phone.slice(-10) : phone,
+      // LeadId: lead_id || null,
+      // AgentId: agent_id || null,
+      // CallType: "Inbound",
+      // CallDate: new Date().toISOString().slice(0, 19).replace("T", " "),
+      // MSISDN: phone.length > 10 ? phone.slice(-10) : phone,
       callcreated: "DialDesk - "+ username
     };
 
@@ -1531,6 +1611,7 @@ const handleSave = async () => {
         <div className="card_tagging">
           <div className="card-content vertical">
             <button className="btn primary">Call Tagging</button>
+            <button className="btn outline" onClick={() => navigate("/offline_tagging")}>Offline Call Tagging</button>
             <button className="btn outline" onClick={() => setShowHistory(true)}>
               Call History
             </button>
@@ -1545,14 +1626,15 @@ const handleSave = async () => {
           </div>
         </div>
 
-        <div className="card_tagging">
+        {/* Analytics Row */}
+        {/* <div className="card_tagging">
           <div className="card-content">
             <h4>Call Quality Analytics</h4>
             <p className="muted">
               Current call with Number Masking • Duration: 8:45
             </p>
 
-            {/* Analytics Row */}
+            
             <div className="analytics-col">
               <div className="analytics-item">
                 <p>
@@ -1584,20 +1666,35 @@ const handleSave = async () => {
               </div>
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* Performance */}
         <div className="card_tagging">
           <div className="card-content">
             <h4>Today's Performance</h4>
+
             <p>
-              Calls Handled: <b>24</b>
+              Calls Handled: <b>{performance.total_calls}</b>
             </p>
+
             <p>
-              Avg. Call Time: <b>4:32</b>
+              Tagged Calls: <b>{performance.tagged_calls}</b>
             </p>
+
             <p>
-              Success Rate: <b className="success-text">92%</b>
+              Not Tagged: <b>{performance.not_tagged_calls}</b>
+            </p>
+
+            <p>
+              Success Rate:{" "}
+              <b className="success-text">
+                {performance.total_calls > 0
+                  ? Math.round(
+                      (performance.tagged_calls / performance.total_calls) * 100
+                    )
+                  : 0}
+                %
+              </b>
             </p>
           </div>
         </div>
@@ -1781,7 +1878,8 @@ const handleSave = async () => {
           alignItems: "center",
           padding: "16px 20px",
           background: "#f8f9fa",
-          borderBottom: "1px solid #ddd"
+          borderBottom: "1px solid #ddd",
+          gap: "20px"
         }}
       >
         <h3 style={{ margin: 0 }}>Training Docs</h3>

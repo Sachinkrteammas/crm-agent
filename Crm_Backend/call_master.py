@@ -21,7 +21,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from database import get_engine, get_engine2, SessionLocal2, get_db, get_db2, get_db3, get_db4
+from database import get_engine, get_db
 from database import SessionLocal
 router = APIRouter(tags=["Call Master"])
 
@@ -121,7 +121,7 @@ def get_csat_report(
     """)
 
     try:
-        engine = get_engine2()
+        engine = get_engine()
         with engine.connect() as conn:
             result = conn.execute(query, {
                 "client_id": client_id,
@@ -141,7 +141,7 @@ def get_priority_calls(
     client_id: int = Query(...),
     start_time: str = Query(...),
     end_time: str = Query(...),
-    db: Session = Depends(get_db2)
+    db: Session = Depends(get_db)
 ):
     try:
         # Convert to date objects
@@ -174,7 +174,7 @@ def get_priority_calls(
 
 @router.get("/types", response_model=List[TypeItem])
 def get_types(
-        CLIENT_ID: int = Query(...), db: Session = Depends(get_db3)):
+        CLIENT_ID: int = Query(...), db: Session = Depends(get_db)):
     sql = text("""
         SELECT DISTINCT CampaignParentName AS id,
                CampaignParentName AS name
@@ -187,7 +187,7 @@ def get_types(
 
 @router.get("/campaigns", response_model=List[CampaignItem])
 def get_campaigns(
-        CLIENT_ID: int = Query(...), type: str = Query(...), db: Session = Depends(get_db3)):
+        CLIENT_ID: int = Query(...), type: str = Query(...), db: Session = Depends(get_db)):
     sql = text("""
         SELECT id, CampaignName
         FROM ob_campaign
@@ -200,7 +200,7 @@ def get_campaigns(
 
 @router.get("/allocations", response_model=List[AllocationItem])
 def get_allocations(
-        CLIENT_ID: int = Query(...), campaign: int = Query(...), db: Session = Depends(get_db3)):
+        CLIENT_ID: int = Query(...), campaign: int = Query(...), db: Session = Depends(get_db)):
     sql = text("""
         SELECT id, AllocationName
         FROM ob_allocation_name
@@ -223,7 +223,7 @@ def get_outcalls(
     msisdn: Optional[str] = None,
     startDate: Optional[str] = None,
     endDate: Optional[str] = None,
-    db: Session = Depends(get_db3)
+    db: Session = Depends(get_db)
 ):
     base_sql = [
         "SELECT o.id, o.Category1 AS scenario, o.Category2 AS subScenario1,",
@@ -277,8 +277,8 @@ def download_excel_raw(
         from_date: date = Query(...),
         to_date: date = Query(...),
         db=Depends(get_db),
-        db2=Depends(get_db2),
-        db3=Depends(get_db3),
+        db2=Depends(get_db),
+        db3=Depends(get_db),
 ):
     # Step 1: Client Info
     client_result = db.execute(text("""
@@ -822,7 +822,7 @@ def download_excel_raw(
 
 
 @router.get("/fields/{client_id}")
-def get_fields_for_client(client_id: int, db: Session = Depends(get_db4)):
+def get_fields_for_client(client_id: int, db: Session = Depends(get_db)):
 
     sql_fields = text("""
         SELECT id, FieldName, FieldType, FieldValidation,
@@ -956,41 +956,218 @@ def get_fields_for_client(client_id: int, db: Session = Depends(get_db4)):
 #     return {"message": "Data saved successfully."}
 
 
-@router.post("/call_tag/{client_id}")
-async def save_call_master(client_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
-    # 1️⃣ Fetch configured fields
+
+@router.post("/call_master/initial-input/{client_id}")
+def insert_call_master(
+    client_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    # 1️⃣ Validate required fields
+    required_fields = ["MSISDN", "LeadId", "AgentId"]
+    for field in required_fields:
+        if not payload.get(field):
+            raise HTTPException(status_code=400, detail=f"{field} is required")
+
+    # 2️⃣ Get next SrNo and SrNo2
     srno_query = text("""
-            SELECT COALESCE(MAX(SrNo), 0) AS last_srno,
-                   COALESCE(MAX(SrNo2), 0) AS last_srno2
-            FROM call_master
-            WHERE ClientId = :client_id
-        """)
-    sr_result = db.execute(srno_query, {"client_id": client_id}).fetchone()
-    next_srno = sr_result.last_srno + 1
-    next_srno2 = sr_result.last_srno2 + 1
+        SELECT 
+            COALESCE(MAX(SrNo), 0) AS last_srno,
+            COALESCE(MAX(SrNo2), 0) AS last_srno2
+        FROM call_master
+        WHERE ClientId = :client_id
+    """)
+
+    result = db.execute(srno_query, {"client_id": client_id}).fetchone()
+
+    next_srno = result.last_srno + 1
+    next_srno2 = result.last_srno2 + 1
+
+    # 3️⃣ Auto-generate CallDate (current timestamp)
+    call_date = datetime.now()
+
+    # 4️⃣ Insert data
+    insert_query = text("""
+        INSERT INTO call_master 
+        (ClientId, MSISDN, LeadId, AgentId, SrNo, SrNo2, CallDate, CallType)
+        VALUES 
+        (:ClientId, :MSISDN, :LeadId, :AgentId, :SrNo, :SrNo2, :CallDate, :CallType)
+    """)
+
+    db.execute(insert_query, {
+        "ClientId": client_id,
+        "MSISDN": payload["MSISDN"],
+        "LeadId": payload["LeadId"],
+        "AgentId": payload["AgentId"],
+        "SrNo": next_srno,
+        "SrNo2": next_srno2,
+        "CallDate": call_date,
+        "CallType": "Inbound"
+    })
+
+    db.commit()
+
+    return {
+        "message": "Inserted successfully",
+        "SrNo": next_srno,
+        "SrNo2": next_srno2
+    }
 
 
+
+@router.get("/latest-call-id")
+def get_latest_call_id(
+    client_id: int = Query(...),
+    agent_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    query = text("""
+        SELECT id
+        FROM call_master
+        WHERE ClientId = :client_id
+          AND AgentId = :agent_id
+          AND Category1 IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+
+    result = db.execute(query, {
+        "client_id": client_id,
+        "agent_id": agent_id
+    }).fetchone()
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="No matching record found"
+        )
+
+    return {
+        "latest_id": result.id
+    }
+
+
+
+# @router.post("/call_tag/{client_id}")
+# async def save_call_master(client_id: int, payload: dict = Body(...), db: Session = Depends(get_db)):
+#     # 1️⃣ Fetch configured fields
+#     srno_query = text("""
+#             SELECT COALESCE(MAX(SrNo), 0) AS last_srno,
+#                    COALESCE(MAX(SrNo2), 0) AS last_srno2
+#             FROM call_master
+#             WHERE ClientId = :client_id
+#         """)
+#     sr_result = db.execute(srno_query, {"client_id": client_id}).fetchone()
+#     next_srno = sr_result.last_srno + 1
+#     next_srno2 = sr_result.last_srno2 + 1
+
+
+#     field_query = text("""
+#         SELECT FieldName, fieldNumber
+#         FROM field_master
+#         WHERE ClientId = :client_id AND (FieldStatus = 1 OR FieldStatus IS NULL)
+#         ORDER BY fieldNumber
+#     """)
+#     result = db.execute(field_query, {"client_id": client_id})
+#     fields = result.mappings().all()
+
+#     if not fields:
+#         raise HTTPException(status_code=404, detail="No fields configured for this client")
+
+#     # 2️⃣ Map dynamic fields
+#     field_column_mapping = {}
+#     for row in fields:
+#         field_name = row["FieldName"].strip()
+#         field_number = row["fieldNumber"]
+#         value = payload.get(field_name) or payload.get(field_name.strip())
+#         field_column_mapping[f"Field{field_number}"] = value
+
+#     # 3️⃣ Add scenario (category) mappings
+#     category_mapping = {
+#         "Category1": payload.get("Scenario"),
+#         "Category2": payload.get("Scenario1"),
+#         "Category3": payload.get("Scenario2"),
+#         "Category4": payload.get("Scenario3"),
+#         "Category5": payload.get("Scenario4"),
+#     }
+
+#     extra_fields = {
+#         "LeadId": payload.get("LeadId"),
+#         "AgentId": payload.get("AgentId"),
+#         "CallType": payload.get("CallType", "Inbound"),
+#         "CallDate": payload.get("CallDate"),  # Should be yyyy-mm-dd
+#         "SrNo": next_srno,
+#         "SrNo2": next_srno2,
+#         "MSISDN": payload.get("MSISDN"),
+#         "callcreated": payload.get("callcreated"),
+
+#     }
+
+#     # 4️⃣ Combine all fields
+#     all_columns = ["ClientId"] + list(extra_fields.keys()) + list(category_mapping.keys()) + list(field_column_mapping.keys())
+#     columns = ', '.join([f"`{col}`" for col in all_columns])
+#     placeholders = ', '.join([f":{col}" for col in all_columns])
+
+#     param_payload = {"ClientId": client_id}
+#     param_payload.update(extra_fields)
+#     param_payload.update(category_mapping)
+#     param_payload.update(field_column_mapping)
+
+#     sql = text(f"""
+#         INSERT INTO call_master ({columns})
+#         VALUES ({placeholders})
+#     """)
+
+#     db.execute(sql, param_payload)
+#     db.commit()
+
+#     return {"message": "Data saved successfully."}
+
+
+
+@router.post("/call_tag/{client_id}")
+async def save_call_master(
+    client_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    record_id = payload.get("Id")
+
+    if not record_id:
+        raise HTTPException(status_code=400, detail="Id is required")
+
+    # 1️⃣ Check if row exists
+    check_query = text("""
+        SELECT Id FROM call_master
+        WHERE Id = :id AND ClientId = :client_id
+        LIMIT 1
+    """)
+    existing = db.execute(check_query, {
+        "id": record_id,
+        "client_id": client_id
+    }).fetchone()
+
+    if not existing:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    # 2️⃣ Fetch dynamic fields
     field_query = text("""
         SELECT FieldName, fieldNumber
         FROM field_master
         WHERE ClientId = :client_id AND (FieldStatus = 1 OR FieldStatus IS NULL)
         ORDER BY fieldNumber
     """)
-    result = db.execute(field_query, {"client_id": client_id})
-    fields = result.mappings().all()
+    fields = db.execute(field_query, {"client_id": client_id}).mappings().all()
 
-    if not fields:
-        raise HTTPException(status_code=404, detail="No fields configured for this client")
-
-    # 2️⃣ Map dynamic fields
+    # 3️⃣ Map dynamic fields
     field_column_mapping = {}
     for row in fields:
         field_name = row["FieldName"].strip()
         field_number = row["fieldNumber"]
-        value = payload.get(field_name) or payload.get(field_name.strip())
-        field_column_mapping[f"Field{field_number}"] = value
+        if field_name in payload:
+            field_column_mapping[f"Field{field_number}"] = payload.get(field_name)
 
-    # 3️⃣ Add scenario (category) mappings
+    # 4️⃣ Category mapping
     category_mapping = {
         "Category1": payload.get("Scenario"),
         "Category2": payload.get("Scenario1"),
@@ -999,43 +1176,55 @@ async def save_call_master(client_id: int, payload: dict = Body(...), db: Sessio
         "Category5": payload.get("Scenario4"),
     }
 
-    extra_fields = {
-        "LeadId": payload.get("LeadId"),
-        "AgentId": payload.get("AgentId"),
-        "CallType": payload.get("CallType", "Inbound"),
-        "CallDate": payload.get("CallDate"),  # Should be yyyy-mm-dd
-        "SrNo": next_srno,
-        "SrNo2": next_srno2,
-        "MSISDN": payload.get("MSISDN"),
-        "callcreated": payload.get("callcreated"),
+    # 5️⃣ Extra fields (only update if present)
+    extra_fields = {}
 
-    }
+    if "AgentId" in payload:
+        extra_fields["AgentId"] = payload.get("AgentId")
 
-    # 4️⃣ Combine all fields
-    all_columns = ["ClientId"] + list(extra_fields.keys()) + list(category_mapping.keys()) + list(field_column_mapping.keys())
-    columns = ', '.join([f"`{col}`" for col in all_columns])
-    placeholders = ', '.join([f":{col}" for col in all_columns])
+    if "CallType" in payload:
+        extra_fields["CallType"] = payload.get("CallType")
 
-    param_payload = {"ClientId": client_id}
-    param_payload.update(extra_fields)
-    param_payload.update(category_mapping)
-    param_payload.update(field_column_mapping)
+    if "MSISDN" in payload:
+        extra_fields["MSISDN"] = payload.get("MSISDN")
 
-    sql = text(f"""
-        INSERT INTO call_master ({columns})
-        VALUES ({placeholders})
+    if "callcreated" in payload:
+        extra_fields["callcreated"] = payload.get("callcreated")
+
+    # 6️⃣ Merge all update fields
+    update_fields = {}
+    update_fields.update(extra_fields)
+    update_fields.update(category_mapping)
+    update_fields.update(field_column_mapping)
+
+    # ❗ Remove None values (important for partial update)
+    update_fields = {k: v for k, v in update_fields.items() if v is not None}
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    # 7️⃣ Build dynamic SET clause
+    set_clause = ", ".join([f"`{k}` = :{k}" for k in update_fields.keys()])
+
+    update_query = text(f"""
+        UPDATE call_master
+        SET {set_clause}
+        WHERE id = :id AND ClientId = :client_id
     """)
 
-    db.execute(sql, param_payload)
+    update_fields["id"] = record_id
+    update_fields["client_id"] = client_id
+
+    db.execute(update_query, update_fields)
     db.commit()
 
-    return {"message": "Data saved successfully."}
+    return {"message": "Data updated successfully"}
 
 
 
 
 @router.get("/get_client_id/{vendor_id}")
-def get_client_id(vendor_id: str, db: Session = Depends(get_db4)):
+def get_client_id(vendor_id: str, db: Session = Depends(get_db)):
     """
     API to fetch client_id using vendor_id (did_number)
     """
@@ -1537,54 +1726,83 @@ def insert_process_read(
 @router.post("/call-history")
 def call_history(
     clientId: int,
-    msisdn: str,
+    agent_id: int,
     db: Session = Depends(get_db)
 ):
     query = text("""
         SELECT *
         FROM call_master
         WHERE ClientId = :clientId
-          AND MSISDN = :msisdn
+          AND AgentId = :agent_id
         ORDER BY CallDate DESC
+        LIMIT 10
     """)
 
     rows = db.execute(
         query,
-        {"clientId": clientId, "msisdn": msisdn}
+        {"clientId": clientId, "agent_id": agent_id}
     ).mappings().all()
 
     if not rows:
         raise HTTPException(status_code=404, detail="No call history found")
 
+    # Fetch dynamic field mapping
+    field_query = text("""
+        SELECT FieldName, fieldNumber
+        FROM field_master
+        WHERE ClientId = :clientId
+          AND (FieldStatus = 1 OR FieldStatus IS NULL)
+        ORDER BY fieldNumber
+    """)
+
+    fields = db.execute(field_query, {"clientId": clientId}).mappings().all()
+
+    # Create mapping: Field1 → Mobile Number
+    field_map = {
+        f"Field{row['fieldNumber']}": row["FieldName"].strip()
+        for row in fields
+    }
+
     data = []
 
     for index, row in enumerate(rows, start=1):
-        data.append({
+        record = {
             "Row No.": index,
             "IN CALL ID": row["SrNo"],
             "CALL FROM": row["MSISDN"],
             "Scenarios": row["Category1"],
             "Sub Scenarios 1": row["Category2"],
             "Sub Scenarios 2": row["Category3"],
-            "Mobile Number": row["Field1"],
-            "First Name": row["Field2"],
-            "Last Name": row["Field3"],
-            "Address": row["Field4"],
-            "State": row["Field5"],
-            "District/Area": row["Field6"],
-            "Pin Code": row["Field7"],
-            "Customer type": row["Field9"],
-            "Date of Purchase": row["Field10"],
-            "Dealer contact number": row["Field11"],
-            "Dealer shop Name": row["Field12"],
-            "Product Model Name": row["Field13"],
-            "Not Serviceable Area PIN Code": row["Field14"],
-            "Remark": row["Field15"],
-            "CRM Issue": row["Category4"],
-            "19 digit Sr. NO.": row["Field16"],
-            "Invoice Date": row["Field17"],
-            "Invoice No.": row["Field18"],
-            "Email ID": row["Field19"],
+            "Sub Scenarios 3": row["Category4"],
+            "Sub Scenarios 4": row["Category5"],
+        }
+
+        # Add dynamic fields
+        for field_key, field_label in field_map.items():
+            record[field_label] = row.get(field_key)
+
+            # "Mobile Number": row["Field1"],
+            # "First Name": row["Field2"],
+            # "Last Name": row["Field3"],
+            # "Address": row["Field4"],
+            # "State": row["Field5"],
+            # "District/Area": row["Field6"],
+            # "Pin Code": row["Field7"],
+            # "Customer type": row["Field9"],
+            # "Date of Purchase": row["Field10"],
+            # "Dealer contact number": row["Field11"],
+            # "Dealer shop Name": row["Field12"],
+            # "Product Model Name": row["Field13"],
+            # "Not Serviceable Area PIN Code": row["Field14"],
+            # "Remark": row["Field15"],
+            # "CRM Issue": row["Category4"],
+            # "19 digit Sr. NO.": row["Field16"],
+            # "Invoice Date": row["Field17"],
+            # "Invoice No.": row["Field18"],
+            # "Email ID": row["Field19"],
+
+        # Continue remaining fields
+        record.update({
             "Call Action": row["CloseLoopCate1"],
             "Call Sub Action": row["CloseLoopCate2"],
             "Call Action Remarks": row["closelooping_remarks"],
@@ -1594,7 +1812,7 @@ def call_history(
             "Tat": row["tat"],
             "Due Date": row["duedate"],
             "Call Created": row["callcreated"],
-            "Closer Time": row["AgentId"],
+            "Agent Id": row["AgentId"],
             "Call Status": row["CloseLoopStatus"],
             "Return AWB": row["Ret_AWBNo"],
             "Return Token": row["Ret_TokenNumber"],
@@ -1602,8 +1820,11 @@ def call_history(
             "Forword AWB": row["AWBNo"],
             "Forword Token": row["TokenNumber"],
             "Pickup Date (Forword)": row["OtherDate"],
-        })
+        })       
 
+        data.append(record)
+
+        
     return {
         "status": "success",
         "total_records": len(data),
@@ -1765,7 +1986,7 @@ def run_alert_scheduler_job():
 
 # Scheduler setup
 scheduler = BackgroundScheduler()
-scheduler.add_job(run_alert_scheduler_job, "interval", minutes=1)
+# scheduler.add_job(run_alert_scheduler_job, "interval", minutes=1)
 scheduler.start()
 
 @router.on_event("shutdown")

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text
 from schemas import *
-from database import get_db, get_db2, get_db3, get_db4
+from database import get_db
 from datetime import date
 from typing import List, Dict, Any
 
@@ -13,8 +13,8 @@ router = APIRouter()
 @router.post("/dashboard_report", response_model=DashboardFullResp)
 def get_dashboard_report(
     req: DashboardReq,
-    db: Session = Depends(get_db2),
-    db_main: Session = Depends(get_db4),
+    db: Session = Depends(get_db),
+    db_main: Session = Depends(get_db),
 ) -> Any:
     # 1) Fetch campaignids
     camp = db_main.execute(
@@ -143,7 +143,7 @@ def get_dashboard_report(
 @router.post("/active_services", response_model=ActiveService)
 def get_active_services(
     req: ActiveServicesRequest,
-    db: Session = Depends(get_db4),
+    db: Session = Depends(get_db),
 ):
     # 1) Look up the balance_master entry for this client
     bm = db.execute(
@@ -194,8 +194,8 @@ def get_active_services(
 @router.post("/call_analysis_report", response_model=CallAnalysisResponse)
 def get_call_analysis_report(
     req: CallAnalysisRequest,
-    db: Session = Depends(get_db2),
-    db_main: Session = Depends(get_db4),
+    db: Session = Depends(get_db),
+    db_main: Session = Depends(get_db),
 ):
     # Fetch campaign ids
     camp = db_main.execute(
@@ -253,8 +253,8 @@ def get_call_analysis_report(
 @router.post("/call_distribution_report", response_model=List[CallDistributionResponse])
 def get_call_distribution_report(
     req: DashboardReq,
-    db: Session = Depends(get_db2),
-    db_main: Session = Depends(get_db4),
+    db: Session = Depends(get_db),
+    db_main: Session = Depends(get_db),
 ):
     camp = db_main.execute(
         text("SELECT campaignid FROM registration_master WHERE company_id=:cid"),
@@ -321,7 +321,7 @@ def get_call_distribution_report(
 def get_ticket_case_analysis(
     company_id: int,
     req: DashboardReq,
-    db: Session = Depends(get_db4),
+    db: Session = Depends(get_db),
 ):
     # Build date condition exactly as in PHP
     vt = req.view_type or "Today"
@@ -439,7 +439,7 @@ def get_ticket_case_analysis(
 @router.post("/ticket_by_source", response_model=List[TicketSourceResponse])
 def get_ticket_by_source(
     req: DashboardReq,
-    db: Session = Depends(get_db4),
+    db: Session = Depends(get_db),
 ):
     cond = "DATE(CallDate) = CURDATE()"  # adjust with view_type logic if needed
     params = {"cid": req.company_id}

@@ -2,7 +2,7 @@ from typing import List, Dict, Any
 from sqlalchemy import bindparam
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from database import get_db, get_db2, get_db3, get_db4
+from database import get_db
 from schemas import *
 from passlib.context import CryptContext
 from jose import jwt
@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 # @router.post("/cdr_report", response_model=List[CDRReportResponse])
-# def get_cdr_report(request: CDRReportRequest, db: Session = Depends(get_db), db2: Session = Depends(get_db2)):
+# def get_cdr_report(request: CDRReportRequest, db: Session = Depends(get_db), db2: Session = Depends(get_db)):
 #     # Step 1: Get campaign ID from registration_master
 #     campaign_query = text("SELECT campaignid FROM registration_master WHERE company_id = :company_id")
 #     campaign_result = db.execute(campaign_query, {"company_id": request.company_id}).mappings().fetchone()
@@ -138,7 +138,7 @@ router = APIRouter()
 
 
 @router.post("/cdr_report", response_model=List[CDRReportResponse])
-def get_cdr_report(request: CDRReportRequest, db: Session = Depends(get_db4), db2: Session = Depends(get_db2)):
+def get_cdr_report(request: CDRReportRequest, db: Session = Depends(get_db), db2: Session = Depends(get_db)):
 
     # -----------------------------------------------------------------
     # 1. Campaign ID resolution (matches PHP logic with All + category)
@@ -297,7 +297,7 @@ def get_cdr_report(request: CDRReportRequest, db: Session = Depends(get_db4), db
 
 
 # @router.post("/ob_cdr_report")
-# def get_ob_cdr_report(request: OBCDRReportRequest, db: Session = Depends(get_db), db2: Session = Depends(get_db2)):
+# def get_ob_cdr_report(request: OBCDRReportRequest, db: Session = Depends(get_db), db2: Session = Depends(get_db)):
 #     # Step 1: Get campaign ID from registration_master
 #     campaign_query = text("SELECT campaignid FROM registration_master WHERE company_id = :company_id")
 #     campaign_result = db.execute(campaign_query, {"company_id": request.company_id}).mappings().fetchone()
@@ -371,9 +371,9 @@ def get_cdr_report(request: CDRReportRequest, db: Session = Depends(get_db4), db
 @router.post("/ob_cdr_report", response_model=List[OBCDReportRow])
 def get_ob_cdr_report(
     request: OBCDRReportRequest,
-    db: Session = Depends(get_db4),   # main DB
-    db2: Session = Depends(get_db2),  # vicidial
-    db3: Session = Depends(get_db3)   # call_master_out DB
+    db: Session = Depends(get_db),   # main DB
+    db2: Session = Depends(get_db),  # vicidial
+    db3: Session = Depends(get_db)   # call_master_out DB
 ):
     # Step 1: Get campaign IDs
     campaign_query = text("SELECT campaignid FROM registration_master WHERE company_id = :company_id")
@@ -466,7 +466,7 @@ def get_ob_cdr_report(
 
 
 # @router.post("/ob_shared_cdr_report")
-# def get_ob_shared_cdr_report(request: OBCDRReportRequest, db: Session = Depends(get_db), db2: Session = Depends(get_db2)):
+# def get_ob_shared_cdr_report(request: OBCDRReportRequest, db: Session = Depends(get_db), db2: Session = Depends(get_db)):
 #     # Step 1: Get campaign ID from registration_master
 #     campaign_query = text("SELECT campaignid FROM registration_master WHERE company_id = :company_id")
 #     campaign_result = db.execute(campaign_query, {"company_id": request.company_id}).mappings().fetchone()
@@ -529,8 +529,8 @@ def get_ob_cdr_report(
 @router.post("/ob_shared_cdr_report")
 def get_ob_shared_cdr_report(
     request: OBCDRReportRequest,
-    db: Session = Depends(get_db4),   # main DB
-    db2: Session = Depends(get_db2)   # vicidial DB
+    db: Session = Depends(get_db),   # main DB
+    db2: Session = Depends(get_db)   # vicidial DB
 ):
     from_dt = request.from_date
     to_dt = request.to_date
@@ -647,7 +647,7 @@ def get_ob_shared_cdr_report(
 # @router.post("/ivr_report")
 # def get_ivr_report(
 #     request: OBCDRReportRequest,  # reuse your schema expecting from_date, to_date, company_id
-#     db: Session = Depends(get_db2)
+#     db: Session = Depends(get_db)
 # ):
 #     """
 #     Returns IVR report for the requested company_id and date range.
@@ -682,7 +682,7 @@ def get_ob_shared_cdr_report(
 @router.post("/ivr_report")
 def get_ivr_report(
     request: OBCDRReportRequest,
-    db4: Session = Depends(get_db4)
+    db4: Session = Depends(get_db)
 ) -> List[Dict[str, Any]]:
     """
     Returns IVR report formatted like the PHP ivr_log report.
@@ -743,7 +743,7 @@ def get_ivr_report(
 # @router.post("/ivr_funnel_report")
 # def get_ivr_funnel_report(
 #     request: IVRFunnelReportRequest,
-#     db: Session = Depends(get_db2)
+#     db: Session = Depends(get_db)
 # ):
 #     try:
 #         # Core Query
@@ -773,7 +773,7 @@ def get_ivr_report(
 @router.post("/ivr_funnel_report")
 def get_ivr_funnel_report(
     request: IVRFunnelReportRequest,
-    db2: Session = Depends(get_db2)
+    db2: Session = Depends(get_db)
 ):
     try:
         # Step 1 – fetch closer log
@@ -868,3 +868,98 @@ def get_ivr_funnel_report(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+class LeadMatchRequest(BaseModel):
+    date: date
+    agent_id: str
+
+@router.post("/agent_call_summary")
+def get_agent_call_summary(
+    request: LeadMatchRequest,
+    db1: Session = Depends(get_db)   # call_master DB
+):
+    query = text("""
+        SELECT 
+            COUNT(cm.Id) AS total_calls,
+            SUM(CASE WHEN cm.Category1 IS NOT NULL THEN 1 ELSE 0 END) AS tagged_calls,
+            SUM(CASE WHEN cm.Category1 IS NULL THEN 1 ELSE 0 END) AS not_tagged_calls
+        FROM call_master cm
+        WHERE DATE(cm.CallDate) = :date
+        AND cm.AgentId = :agent_id
+    """)
+
+    result = db1.execute(query, {
+        "date": request.date,
+        "agent_id": request.agent_id
+    }).mappings().fetchone()
+
+    return {
+        "date": request.date,
+        "agent_id": request.agent_id,
+        "total_calls": result["total_calls"] or 0,
+        "tagged_calls": result["tagged_calls"] or 0,
+        "not_tagged_calls": result["not_tagged_calls"] or 0
+    }
+
+
+
+@router.get("/untagged-calls")
+def get_untagged_calls(
+    client_id: int = Query(...),
+    agent_id: int = Query(...),
+    call_date: date = Query(...),
+    db: Session = Depends(get_db)
+):
+    query = text("""
+        SELECT 
+            cm.Id,
+            cm.ClientId,
+            cm.AgentId,
+            cm.LeadId,            
+            cm.MSISDN,
+            cm.CallDate,
+            am.username
+        FROM call_master cm
+        JOIN agent_master am ON cm.AgentId = am.id
+        WHERE cm.ClientId = :client_id
+          AND cm.AgentId = :agent_id
+          AND DATE(cm.CallDate) = :call_date
+          AND cm.Category1 IS NULL
+        ORDER BY cm.CallDate DESC
+    """)
+
+    results = db.execute(query, {
+        "client_id": client_id,
+        "agent_id": agent_id,
+        "call_date": call_date
+    }).mappings().all()
+
+    if not results:
+        return {
+            "message": "No untagged calls found",
+            "data": []
+        }
+
+    # ✅ Add recording link per row
+    updated_results = []
+    for row in results:
+        row_dict = dict(row)
+
+        leadid = row_dict.get("LeadId")
+        username = row_dict.get("username")
+
+
+
+        recording_link = (
+            f"https://dialdesk.co.in/download-recording/download.php"
+            f"?mode=DD&filename={leadid}&agent={username}"
+        )
+
+        row_dict["recording"] = recording_link
+        updated_results.append(row_dict)
+
+    return {
+        "count": len(updated_results),
+        "data": updated_results
+    }

@@ -2,7 +2,8 @@
 import axios from "axios";
 
 // Adjust this to your FastAPI backend URL
-const API_BASE_URL = "http://172.12.13.118:8010";
+// const API_BASE_URL = "http://172.12.13.118:8010";
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 
 const api = axios.create({
