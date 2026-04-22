@@ -1,9 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+import os
+from dotenv import load_dotenv
 
-# Your MySQL connection string
-SQL_DB_URL = "mysql+pymysql://root:dial%40mas123@192.168.10.12/db_dialdesk?charset=utf8mb4"
-# SQL_DB_URL = "mysql+pymysql://root:vicidialnow@192.168.11.236/db_dialdesk?charset=utf8mb4"
+
+load_dotenv()
+
+SQL_DB_URL = os.getenv("SQL_DB_URL")
+
 
 
 
@@ -26,8 +30,8 @@ def get_db():
 
 
 
+SQL_DB_URL5 = os.getenv("SQL_DB_URL5")
 
-SQL_DB_URL5 = "mysql+pymysql://root:vicidialnow@192.168.10.5/asterisk?charset=utf8mb4"
 
 engine5 = create_engine(SQL_DB_URL5)
 SessionLocal5 = sessionmaker(bind=engine5)

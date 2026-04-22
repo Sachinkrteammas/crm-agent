@@ -1986,7 +1986,7 @@ def run_alert_scheduler_job():
 
 # Scheduler setup
 scheduler = BackgroundScheduler()
-# scheduler.add_job(run_alert_scheduler_job, "interval", minutes=1)
+scheduler.add_job(run_alert_scheduler_job, "interval", minutes=1)
 scheduler.start()
 
 @router.on_event("shutdown")
