@@ -1125,6 +1125,174 @@ def get_latest_call_id(
 
 
 
+def create_alert_schedules_for_call(
+    db: Session,
+    client_id: int,
+    call_master_id: int,
+    categories: Dict[str, Any],
+) -> int:
+    """
+    Check alert_mechanism for all alerts configured for the client, match their
+    scenario fields against the call_master categories, and insert a row into
+    alert_scheduler for each match linking back to the call_master Id via data_id.
+    """
+    mechanisms = db.query(AlertMechanisms).filter(
+        AlertMechanisms.client_id == client_id,
+        AlertMechanisms.alert_category != "closeloop"
+    ).all()
+
+    if not mechanisms:
+        return 0
+
+    scenario_pairs = [
+        ("scenario1", "Category1"),
+        ("scenario2", "Category2"),
+        ("scenario3", "Category3"),
+        ("scenario4", "Category4"),
+        ("scenario5", "Category5"),
+    ]
+
+    created = 0
+    for mech in mechanisms:
+        # If the mechanism has scenarios configured, every configured scenario
+        # must match the corresponding call category, otherwise it applies globally.
+        has_scenario = any(getattr(mech, col) for col, _ in scenario_pairs)
+
+        if has_scenario:
+            matched = all(
+                not getattr(mech, col) or getattr(mech, col) == categories.get(cat)
+                for col, cat in scenario_pairs
+            )
+            if not matched:
+                continue
+
+        # Skip duplicate schedule for the same call + alert
+        existing = db.query(AlertScheduler).filter(
+            AlertScheduler.data_id == call_master_id,
+            AlertScheduler.client_id == mech.client_id,
+            AlertScheduler.alert_category == mech.alert_category,
+            AlertScheduler.template_name == mech.template_name,
+        ).first()
+
+        if existing:
+            continue
+
+        # Set status columns based on alert_on configured in the mechanism.
+        # Channels not selected in alert_on are marked as done/skipped.
+        alert_on = (mech.alert_on or "").lower()
+        sms_status = False if alert_on in ("sms", "all") else True
+        email_status = False if alert_on in ("email", "all") else True
+        whatsapp_status = False if alert_on in ("whatsapp", "all") else True
+
+        new_schedule = AlertScheduler(
+            data_id=call_master_id,
+            client_id=mech.client_id,
+            alert_category=mech.alert_category,
+            alert_on=mech.alert_on,
+            template_name=mech.template_name,
+            template_text=mech.template_text,
+            scenario1=mech.scenario1,
+            scenario2=mech.scenario2,
+            scenario3=mech.scenario3,
+            scenario4=mech.scenario4,
+            scenario5=mech.scenario5,
+            person_name=mech.person_name,
+            phone=mech.phone,
+            email=mech.email,
+            tat=mech.tat,
+            sms_status=sms_status,
+            email_status=email_status,
+            whatsapp_status=whatsapp_status,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            created_by=mech.created_by,
+            updated_by=mech.updated_by,
+        )
+
+        db.add(new_schedule)
+        created += 1
+
+    db.commit()
+
+    return created
+
+
+def save_closeloop_alert_schedule(
+    db: Session,
+    client_id: int,
+    data_id: Optional[int] = None,
+) -> int:
+    """
+    Check alert_mechanisms for a 'closeloop' entry configured for the client.
+    If present, save an entry into alert_scheduler carrying the call action /
+    sub call action (close_action_type / close_action_sub_type) defined in the
+    mechanism.
+
+    This is an additive helper for the closeloop flow only and does not alter
+    the existing alert scheduling / sending flow.
+    """
+    mechanisms = db.query(AlertMechanisms).filter(
+        AlertMechanisms.client_id == client_id,
+        AlertMechanisms.alert_category == "closeloop",
+    ).all()
+
+    if not mechanisms:
+        return 0
+
+    created = 0
+    for mech in mechanisms:
+        # Skip duplicate closeloop schedule for the same call + template
+        existing = db.query(AlertScheduler).filter(
+            AlertScheduler.data_id == data_id,
+            AlertScheduler.client_id == mech.client_id,
+            AlertScheduler.alert_category == "closeloop",
+            AlertScheduler.template_name == mech.template_name,
+        ).first()
+
+        if existing:
+            continue
+
+        # Channels not selected in alert_on are marked as done/skipped.
+        alert_on = (mech.alert_on or "").lower()
+        sms_status = False if alert_on in ("sms", "all") else True
+        email_status = False if alert_on in ("email", "all") else True
+        whatsapp_status = False if alert_on in ("whatsapp", "all") else True
+
+        new_schedule = AlertScheduler(
+            data_id=data_id,
+            client_id=mech.client_id,
+            alert_category=mech.alert_category,
+            alert_on=mech.alert_on,
+            template_name=mech.template_name,
+            template_text=mech.template_text,
+            scenario1=mech.scenario1,
+            scenario2=mech.scenario2,
+            scenario3=mech.scenario3,
+            scenario4=mech.scenario4,
+            scenario5=mech.scenario5,
+            person_name=mech.person_name,
+            phone=mech.phone,
+            email=mech.email,
+            tat=mech.tat,
+            close_action_type=mech.close_action_type,
+            close_action_sub_type=mech.close_action_sub_type,
+            sms_status=sms_status,
+            email_status=email_status,
+            whatsapp_status=whatsapp_status,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            created_by=mech.created_by,
+            updated_by=mech.updated_by,
+        )
+
+        db.add(new_schedule)
+        created += 1
+
+    db.commit()
+
+    return created
+
+
 @router.post("/call_tag/{client_id}")
 async def save_call_master(
     client_id: int,
@@ -1218,7 +1386,36 @@ async def save_call_master(
     db.execute(update_query, update_fields)
     db.commit()
 
-    return {"message": "Data updated successfully"}
+    # 8️⃣ Create alert schedules from alert_mechanism for this call
+    row_query = text("""
+        SELECT Category1, Category2, Category3, Category4, Category5
+        FROM call_master
+        WHERE id = :id AND ClientId = :client_id
+    """)
+    call_row = db.execute(row_query, {"id": record_id, "client_id": client_id}).mappings().fetchone()
+
+    categories = {
+        "Category1": call_row["Category1"] if call_row else None,
+        "Category2": call_row["Category2"] if call_row else None,
+        "Category3": call_row["Category3"] if call_row else None,
+        "Category4": call_row["Category4"] if call_row else None,
+        "Category5": call_row["Category5"] if call_row else None,
+    }
+
+    schedules_created = create_alert_schedules_for_call(db, client_id, record_id, categories)
+
+    # 9️⃣ Save closeloop alert schedule if a closeloop mechanism exists for the client
+    closeloop_schedules_created = save_closeloop_alert_schedule(
+        db=db,
+        client_id=client_id,
+        data_id=record_id,
+    )
+
+    return {
+        "message": "Data updated successfully",
+        "alert_schedules_created": schedules_created,
+        "closeloop_schedules_created": closeloop_schedules_created,
+    }
 
 
 
@@ -1304,6 +1501,32 @@ async def create_alert_schedule_from_mechanisms(client_id: int, phone: str, db: 
     db.commit()
 
     return {"status": "success", "message": "Alert schedules created successfully"}
+
+
+@router.post("/alert_scheduler/closeloop/{client_id}/{data_id}")
+def create_closeloop_alert_schedule(
+    client_id: int,
+    data_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Save an alert_scheduler entry for the client's closeloop mechanism, if present.
+    The scheduler row carries the call action / sub call action defined in the
+    mechanism (close_action_type / close_action_sub_type). Does not affect the
+    existing alert flow.
+    """
+    created = save_closeloop_alert_schedule(
+        db=db,
+        client_id=client_id,
+        data_id=data_id,
+    )
+
+    return {
+        "status": "success",
+        "client_id": client_id,
+        "data_id": data_id,
+        "closeloop_schedules_created": created,
+    }
 
 
 WHATSAPP_API_URL = "http://192.168.10.33:3001/api/send-text"
@@ -1956,7 +2179,76 @@ def trainning_hub(payload: TrainingHubRequest, db: Session = Depends(get_db)):
             "message": str(e)
         }
 
+@router.post("/call-history/save")
+def save_call_history(
+    clientId: int,
+    agent_id: int,
+    msisdn: str,
+    db: Session = Depends(get_db)
+):
+    msisdn = "".join(filter(str.isdigit, msisdn))[-10:]
 
+    if not msisdn:
+        return {
+            "status": "failed",
+            "message": "Invalid MSISDN"
+        }
+
+    # Get next SrNo for this ClientId
+    next_srno = db.execute(
+        text("""
+            SELECT COALESCE(MAX(SrNo), 0) + 1
+            FROM call_master
+            WHERE ClientId = :clientId
+        """),
+        {
+            "clientId": clientId
+        }
+    ).scalar()
+
+    call_date = datetime.now()
+
+    db.execute(
+        text("""
+            INSERT INTO call_master
+            (
+                ClientId,
+                SrNo,
+                MSISDN,
+                CallDate,
+                AgentId,
+                CallType
+            )
+            VALUES
+            (
+                :clientId,
+                :srno,
+                :msisdn,
+                :call_date,
+                :agent_id,
+                'Open'
+            )
+        """),
+        {
+            "clientId": clientId,
+            "srno": next_srno,
+            "msisdn": msisdn,
+            "call_date": call_date,
+            "agent_id": agent_id
+        }
+    )
+
+    db.commit()
+
+    return {
+        "status": "saved",
+        "message": "Call history saved successfully",
+        "clientId": clientId,
+        "agent_id": agent_id,
+        "msisdn": msisdn,
+        "sr_no": next_srno,
+        "call_date": call_date
+    }
 
 
 # Runs trigger_alerts() every 1 minute.
@@ -1986,7 +2278,7 @@ def run_alert_scheduler_job():
 
 # Scheduler setup
 scheduler = BackgroundScheduler()
-scheduler.add_job(run_alert_scheduler_job, "interval", minutes=1)
+# scheduler.add_job(run_alert_scheduler_job, "interval", minutes=1)
 scheduler.start()
 
 @router.on_event("shutdown")

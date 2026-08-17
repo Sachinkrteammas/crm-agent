@@ -312,6 +312,35 @@ useEffect(() => {
 }, [companyId]);
 
 
+const callHistorySaved = useRef(false);
+
+useEffect(() => {
+  if (callHistorySaved.current) return;
+
+  if (!companyId || !agent_id || !msisdn) return;
+
+  callHistorySaved.current = true;
+
+  const saveCallHistory = async () => {
+    try {
+      const res = await api.post("/call/call-history/save", null, {
+        params: {
+          clientId: Number(companyId),
+          agent_id: Number(agent_id),
+          msisdn: msisdn
+        }
+      });
+
+      console.log("Call history:", res.data);
+    } catch (err) {
+      callHistorySaved.current = false;
+      console.error("Call history save error:", err);
+    }
+  };
+
+  saveCallHistory();
+}, [companyId, agent_id, msisdn]);
+
   // Generic fetch for children scenarios
   const fetchChildren = async (level, parentId, setter) => {
     if (!parentId) return;
@@ -1225,7 +1254,7 @@ const handleSave = async () => {
     };
 
     await api.post(`/call/call_tag/${companyId}`, payload);
-    handleSaveMechanism();
+    //handleSaveMechanism();
     alert("Data saved successfully!");
 
     // Reset form

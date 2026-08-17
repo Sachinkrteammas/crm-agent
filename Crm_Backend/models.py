@@ -22,9 +22,11 @@ class AlertMechanisms(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, nullable=False)
-    alert_category = Column(Enum('caller', 'internal', 'escalation'), nullable=False)
+    alert_category = Column(Enum('caller', 'internal', 'escalation', 'closeloop'), nullable=False)
     alert_on = Column(Enum('SMS', 'Email', 'WhatsApp', 'All'), nullable=False, default='All')
     template_name = Column(String(255), nullable=False)
+    template_id = Column(String(100))
+    abandon = Column(Boolean, nullable=True)
     template_text = Column(Text, nullable=False)
     scenario1 = Column(String(255))
     scenario2 = Column(String(255))
@@ -41,14 +43,17 @@ class AlertMechanisms(Base):
     updated_by = Column(Integer)
     WHATSAPP_API_KEY = Column(String(255), default=None)
     WHATSAPP_SESSION_ID = Column(String(255), default=None)
+    close_action_type = Column(String(100))
+    close_action_sub_type = Column(String(100))
 
 
 class AlertScheduler(Base):
     __tablename__ = "alert_scheduler"
 
     id = Column(Integer, primary_key=True, index=True)
+    data_id = Column(Integer, nullable=True)
     client_id = Column(Integer, nullable=False)
-    alert_category = Column(Enum('caller', 'internal', 'escalation'), nullable=False)
+    alert_category = Column(Enum('caller', 'internal', 'escalation', 'closeloop'), nullable=False)
     alert_on = Column(Enum('SMS', 'Email', 'WhatsApp', 'All'), nullable=False, default='All')
     template_name = Column(String(255), nullable=False)
     template_text = Column(Text, nullable=False)
@@ -61,6 +66,8 @@ class AlertScheduler(Base):
     phone = Column(String(20))
     email = Column(String(255))
     tat = Column(Integer)
+    close_action_type = Column(String(100))
+    close_action_sub_type = Column(String(100))
     sms_status = Column(Boolean, default=False)
     email_status = Column(Boolean, default=False)
     whatsapp_status = Column(Boolean, default=False)

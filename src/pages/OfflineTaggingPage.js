@@ -1258,7 +1258,7 @@ const handleSave = async () => {
     };
 
     await api.post(`/call/call_tag/${companyId}`, payload);
-    handleSaveMechanism();
+    //handleSaveMechanism();
     alert("Data saved successfully!");
 
     // Reset form
