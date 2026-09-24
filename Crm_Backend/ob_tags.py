@@ -331,7 +331,7 @@ def find_by_phone(
         WHERE a.CampaignId = :campaign_id
           AND a.ClientId = :client_id
           AND (ocd.AgentId IS NULL OR ocd.AgentId = :agent_id)
-        ORDER BY ocd.id ASC
+        ORDER BY ocd.id DESC
         LIMIT 500
     """)
     rows = db.execute(
