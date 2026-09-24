@@ -1653,6 +1653,12 @@ const handleSave = async () => {
             >
               Training Docs
             </button>
+            <button
+              className="btn outline"
+              onClick={() => navigate("/ob_call")}
+            >
+              OB Call
+            </button>
           </div>
         </div>
 

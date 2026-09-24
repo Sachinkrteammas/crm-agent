@@ -58,7 +58,7 @@ useEffect(() => {
   if (storedRole) setRole(storedRole);
 
   if (storedRole === "agent") {
-    const allowedPaths = ["/tagging", "/offline_tagging"];
+    const allowedPaths = ["/tagging", "/offline_tagging", "/ob_call"];
 
     const isAllowed = allowedPaths.some((path) =>
       location.pathname.startsWith(path)

@@ -396,7 +396,7 @@ async def list_companies():
         cursor = conn.cursor()
 
         # Fetch all columns
-        cursor.execute("SELECT * FROM registration_master ORDER BY create_date DESC")
+        cursor.execute("SELECT * FROM registration_master WHERE status = 'A' ORDER BY create_date DESC")
         rows = cursor.fetchall()
 
         # Convert rows to list of dictionaries

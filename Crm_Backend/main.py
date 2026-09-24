@@ -11,6 +11,7 @@ from agents import router as agents_router
 from real_time_agents import router as real_time_agents_router
 from plan import router as plan_router
 from company import router as company_router
+from ob_tags import router as ob_tags_router
 
 
 
@@ -36,6 +37,7 @@ app.include_router(agents_router, prefix="/agents", tags=["Agents"])
 app.include_router(real_time_agents_router, prefix="/real_time_agents", tags=["Real Time Agents"])
 app.include_router(plan_router, prefix="/plan", tags=["Plan Management"])
 app.include_router(company_router, prefix="/company", tags=["Company Management"])
+app.include_router(ob_tags_router, prefix="/ob_tags", tags=["OB Tags"])
 
 
 

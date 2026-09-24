@@ -76,6 +76,7 @@ import CallReports from "./pages/CallReports";
 import RealTimeDashboard from "./pages/RealTimeDashboard";
 import CompanyRegistration from "./pages/company-registration";
 import OfflineTaggingPage from "./pages/OfflineTaggingPage";
+import OBCallPage from "./pages/OBCallPage";
 
 function App() {
 
@@ -241,6 +242,7 @@ function App() {
               <Route path="/tagging_reports" element={<TaggingReports />} />
               <Route path="/call_reports" element={<CallReports />} />
               <Route path="/offline_tagging" element={<OfflineTaggingPage />} />
+              <Route path="/ob_call" element={<OBCallPage />} />
           </Route>
       </Route>
     </Routes>
