@@ -10,6 +10,7 @@ export default function OBCallPage() {
   const urlClientId = searchParams.get("client_id");
   const urlCampaignId = searchParams.get("campaignId");
   const urlPhone = searchParams.get("phone_number");
+  const urlSourceId = searchParams.get("source_id");
 
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState(
@@ -180,9 +181,14 @@ export default function OBCallPage() {
       });
   };
 
-  // Resolve phone_number from URL to an allocation + record
+  // Resolve phone_number or source_id from URL to an allocation + record
   useEffect(() => {
-    if (!urlPhone || !selectedClient || !selectedCampaign || phoneResolved.current)
+    if (
+      !(urlPhone || urlSourceId) ||
+      !selectedClient ||
+      !selectedCampaign ||
+      phoneResolved.current
+    )
       return;
     phoneResolved.current = true;
     api
@@ -191,6 +197,7 @@ export default function OBCallPage() {
           ClientId: selectedClient,
           CampaignId: selectedCampaign,
           phone: urlPhone,
+          source_id: urlSourceId,
           AgentId: localStorage.getItem("id"),
         },
       })
@@ -199,7 +206,7 @@ export default function OBCallPage() {
         setSelectedAllocation(String(res.data.AllocationId));
       })
       .catch((err) => {
-        console.error("Phone not found:", err);
+        console.error("Record not found:", err);
         setTargetDataId(null);
       });
   }, [selectedClient, selectedCampaign]);
@@ -413,7 +420,7 @@ export default function OBCallPage() {
     try {
       const payload = {
         ...formData,
-        TagType: urlPhone ? "PD" : "Manual",
+        TagType: urlPhone || urlSourceId ? "PD" : "Manual",
         AgentId: localStorage.getItem("id"),
         callcreated: "DialDesk - " + (localStorage.getItem("username") || ""),
         AllocationId: Number(selectedAllocation),
@@ -432,7 +439,7 @@ export default function OBCallPage() {
         },
       });
       alert("Tagging saved successfully!");
-      if (urlPhone) {
+      if (urlPhone || urlSourceId) {
         setSelectedCampaign("");
         setAllocations([]);
         setSelectedAllocation("");

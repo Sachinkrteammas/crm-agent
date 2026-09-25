@@ -320,10 +320,26 @@ def select_ob_campaign_data(
 def find_by_phone(
     ClientId: int = Query(...),
     CampaignId: int = Query(...),
-    phone: str = Query(...),
+    phone: Optional[str] = Query(None),
     AgentId: Optional[int] = Query(None),
+    source_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
+    if source_id:
+        query = text("""
+            SELECT ocd.*
+            FROM ob_campaign_data ocd
+            WHERE ocd.id = :source_id
+        """)
+        row = db.execute(
+            query,
+            {"source_id": source_id},
+        ).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="No data found for source id")
+        record = dict(row)
+        return {"AllocationId": record["AllocationId"], "record": record}
+
     query = text("""
         SELECT ocd.*
         FROM ob_campaign_data ocd
@@ -332,7 +348,7 @@ def find_by_phone(
           AND a.ClientId = :client_id
           AND (ocd.AgentId IS NULL OR ocd.AgentId = :agent_id)
         ORDER BY ocd.id DESC
-        LIMIT 500
+        LIMIT 1000
     """)
     rows = db.execute(
         query,
