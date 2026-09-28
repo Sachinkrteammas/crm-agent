@@ -342,6 +342,126 @@ useEffect(() => {
   saveCallHistory();
 }, [companyId, agent_id, msisdn, lead_id]);
 
+// Auto-fill from the last tagged call for this client + MSISDN
+const [previousCall, setPreviousCall] = useState(null);
+
+useEffect(() => {
+  if (!companyId || !msisdn) return;
+
+  api
+    .get("/call/call-master-by-msisdn", {
+      params: { client_id: companyId, msisdn: msisdn }
+    })
+    .then((res) => {
+      setPreviousCall(res.data && res.data.found ? res.data : null);
+    })
+    .catch((err) => console.error("Previous call lookup error:", err));
+}, [companyId, msisdn]);
+
+// Merge previous values into empty fields only, once fields are loaded
+useEffect(() => {
+  if (!previousCall || fields.length === 0) return;
+
+  const allowed = new Set(fields.map((f) => f.FieldName));
+
+  setFormData((prev) => {
+    const next = { ...prev };
+    let changed = false;
+    Object.entries(previousCall.fields || {}).forEach(([name, value]) => {
+      if (!allowed.has(name)) return;
+      if (value === null || value === undefined || value === "") return;
+      if (!next[name]) {
+        next[name] = value;
+        changed = true;
+      }
+    });
+    return changed ? next : prev;
+  });
+}, [previousCall, fields]);
+
+// Auto-fill scenarios from the previous call, only when the agent has not picked any
+const scenarioPrefilled = useRef(false);
+
+useEffect(() => {
+  if (!previousCall || scenarioList.length === 0) return;
+  if (scenarioPrefilled.current) return;
+  if (
+    selectedScenarioLabel ||
+    selectedScenario1Label ||
+    selectedScenario2Label ||
+    selectedScenario3Label ||
+    selectedScenario4Label
+  ) {
+    return;
+  }
+
+  const names = [
+    previousCall.scenario,
+    previousCall.scenario1,
+    previousCall.scenario2,
+    previousCall.scenario3,
+    previousCall.scenario4
+  ];
+
+  if (!names[0]) return;
+
+  const listSetters = [
+    setScenario1List,
+    setScenario2List,
+    setScenario3List,
+    setScenario4List
+  ];
+  const idSetters = [
+    setSelectedScenario,
+    setSelectedScenario1,
+    setSelectedScenario2,
+    setSelectedScenario3,
+    setSelectedScenario4
+  ];
+  const labelSetters = [
+    setSelectedScenarioLabel,
+    setSelectedScenario1Label,
+    setSelectedScenario2Label,
+    setSelectedScenario3Label,
+    setSelectedScenario4Label
+  ];
+
+  const applyScenarios = async () => {
+    let options = scenarioList;
+    let applied = 0;
+
+    for (let i = 0; i < names.length; i++) {
+      if (!names[i]) break;
+
+      const match = options.find(
+        (s) =>
+          String(s.ecrName || "").trim().toLowerCase() ===
+          String(names[i]).trim().toLowerCase()
+      );
+      if (!match) break;
+
+      idSetters[i](String(match.id));
+      labelSetters[i](match.ecrName);
+      applied++;
+
+      if (i < 4) {
+        const res = await api.get(
+          `/core_api/categories/level${i + 2}/${match.id}?client_id=${companyId}`
+        );
+        const children = Array.isArray(res.data) ? res.data : [];
+        listSetters[i](children);
+        options = children;
+      }
+    }
+
+    if (applied > 0) scenarioPrefilled.current = true;
+  };
+
+  applyScenarios().catch((err) =>
+    console.error("Scenario prefill error:", err)
+  );
+}, [previousCall, scenarioList, companyId]);
+
   // Generic fetch for children scenarios
   const fetchChildren = async (level, parentId, setter) => {
     if (!parentId) return;

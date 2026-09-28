@@ -2059,6 +2059,93 @@ def call_history(
 ############################# Call history end #########################
 
 
+@router.get("/call-master-by-msisdn")
+def call_master_by_msisdn(
+    client_id: int = Query(...),
+    msisdn: str = Query(...),
+    exclude_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """Latest tagged call_master row for a client + MSISDN, for auto-fill."""
+    msisdn = "".join(filter(str.isdigit, msisdn))[-10:]
+
+    if not msisdn:
+        return {"found": False}
+
+    # Map Field1..FieldN back to FieldName using field_master
+    field_rows = [
+        r for r in db.execute(
+            text("""
+                SELECT FieldName, fieldNumber
+                FROM field_master
+                WHERE ClientId = :client_id
+                  AND (FieldStatus = 1 OR FieldStatus IS NULL)
+                ORDER BY fieldNumber
+            """),
+            {"client_id": client_id}
+        ).mappings().all()
+        if r.get("fieldNumber") is not None
+    ]
+
+    if not field_rows:
+        return {"found": False}
+
+    select_cols = [
+        "Id", "CallDate", "MSISDN",
+        "Category1", "Category2", "Category3", "Category4", "Category5"
+    ] + [f"Field{fr['fieldNumber']}" for fr in field_rows]
+
+    col_list = ", ".join(f"`{c}`" for c in select_cols)
+
+    conditions = [
+        "RIGHT(MSISDN, 10) = :msisdn",
+        "Category1 IS NOT NULL"
+    ]
+    params = {"client_id": client_id, "msisdn": msisdn}
+
+    if exclude_id:
+        conditions.append("Id <> :exclude_id")
+        params["exclude_id"] = exclude_id
+
+    # Only look inside the client's most recent 1000 calls
+    query = text(f"""
+        SELECT {col_list}
+        FROM (
+            SELECT {col_list}
+            FROM call_master
+            WHERE ClientId = :client_id
+            ORDER BY Id DESC
+            LIMIT 500
+        ) AS recent_calls
+        WHERE {" AND ".join(conditions)}
+        ORDER BY CallDate DESC, Id DESC
+        LIMIT 1
+    """)
+
+    row = db.execute(query, params).mappings().first()
+
+    if not row:
+        return {"found": False}
+
+    fields = {}
+    for fr in field_rows:
+        value = row.get(f"Field{fr['fieldNumber']}")
+        if value is not None and value != "":
+            fields[fr["FieldName"].strip()] = value
+
+    return {
+        "found": True,
+        "id": row["Id"],
+        "call_date": row["CallDate"],
+        "scenario": row["Category1"],
+        "scenario1": row["Category2"],
+        "scenario2": row["Category3"],
+        "scenario3": row["Category4"],
+        "scenario4": row["Category5"],
+        "fields": fields
+    }
+
+
 ##########################
 
 def get_resolution(db: Session, payload):
