@@ -2184,6 +2184,7 @@ def save_call_history(
     clientId: int,
     agent_id: int,
     msisdn: str,
+    lead_id: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     msisdn = "".join(filter(str.isdigit, msisdn))[-10:]
@@ -2193,6 +2194,35 @@ def save_call_history(
             "status": "failed",
             "message": "Invalid MSISDN"
         }
+
+    lead_id_val = int(lead_id) if (lead_id or "").strip().isdigit() else None
+
+    # Block duplicate entries for the same LeadId
+    if lead_id_val is not None:
+        existing = db.execute(
+            text("""
+                SELECT Id
+                FROM call_master
+                WHERE ClientId = :clientId AND LeadId = :lead_id
+                ORDER BY Id DESC
+                LIMIT 1
+            """),
+            {
+                "clientId": clientId,
+                "lead_id": lead_id_val
+            }
+        ).fetchone()
+
+        if existing:
+            return {
+                "status": "duplicate",
+                "message": "Call history already exists for this lead",
+                "clientId": clientId,
+                "agent_id": agent_id,
+                "msisdn": msisdn,
+                "id": existing.Id,
+                "lead_id": lead_id_val
+            }
 
     # Get next SrNo for this ClientId
     next_srno = db.execute(
@@ -2217,6 +2247,7 @@ def save_call_history(
                 MSISDN,
                 CallDate,
                 AgentId,
+                LeadId,
                 CallType
             )
             VALUES
@@ -2226,6 +2257,7 @@ def save_call_history(
                 :msisdn,
                 :call_date,
                 :agent_id,
+                :lead_id,
                 'Open'
             )
         """),
@@ -2234,7 +2266,8 @@ def save_call_history(
             "srno": next_srno,
             "msisdn": msisdn,
             "call_date": call_date,
-            "agent_id": agent_id
+            "agent_id": agent_id,
+            "lead_id": lead_id_val
         }
     )
 

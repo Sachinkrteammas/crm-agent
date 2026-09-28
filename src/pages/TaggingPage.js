@@ -327,7 +327,8 @@ useEffect(() => {
         params: {
           clientId: Number(companyId),
           agent_id: Number(agent_id),
-          msisdn: msisdn
+          msisdn: msisdn,
+          lead_id: lead_id || null
         }
       });
 
@@ -339,7 +340,7 @@ useEffect(() => {
   };
 
   saveCallHistory();
-}, [companyId, agent_id, msisdn]);
+}, [companyId, agent_id, msisdn, lead_id]);
 
   // Generic fetch for children scenarios
   const fetchChildren = async (level, parentId, setter) => {

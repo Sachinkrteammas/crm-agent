@@ -318,8 +318,8 @@ def select_ob_campaign_data(
 # ---------------- /find_by_phone ----------------
 @router.get("/find_by_phone")
 def find_by_phone(
-    ClientId: int = Query(...),
-    CampaignId: int = Query(...),
+    ClientId: Optional[int] = Query(None),
+    CampaignId: str = Query(...),
     phone: Optional[str] = Query(None),
     AgentId: Optional[int] = Query(None),
     source_id: Optional[int] = Query(None),
@@ -327,8 +327,11 @@ def find_by_phone(
 ):
     if source_id:
         query = text("""
-            SELECT ocd.*
+            SELECT ocd.*,
+                   a.CampaignId AS _resolved_campaign_id,
+                   a.ClientId AS _resolved_client_id
             FROM ob_campaign_data ocd
+            LEFT JOIN ob_allocation_name a ON a.id = ocd.AllocationId
             WHERE ocd.id = :source_id
         """)
         row = db.execute(
@@ -338,14 +341,53 @@ def find_by_phone(
         if not row:
             raise HTTPException(status_code=404, detail="No data found for source id")
         record = dict(row)
-        return {"AllocationId": record["AllocationId"], "record": record}
+        resolved_campaign_id = record.pop("_resolved_campaign_id", None)
+        resolved_client_id = record.pop("_resolved_client_id", None)
+        return {
+            "AllocationId": record["AllocationId"],
+            "record": record,
+            "CampaignId": resolved_campaign_id,
+            "ClientId": resolved_client_id or ClientId,
+        }
+
+    # Resolve campaign by id or by CampaignName, and derive its ClientId
+    campaign_ref = str(CampaignId).strip()
+    campaign_row = None
+
+    if campaign_ref.isdigit():
+        campaign_row = db.execute(
+            text("SELECT id, ClientId FROM ob_campaign WHERE id = :cid LIMIT 1"),
+            {"cid": int(campaign_ref)},
+        ).mappings().first()
+
+    if not campaign_row:
+        campaign_row = db.execute(
+            text("""
+                SELECT id, ClientId
+                FROM ob_campaign
+                WHERE LOWER(TRIM(CampaignName)) = LOWER(:name)
+                   OR LOWER(REPLACE(TRIM(CampaignName), '_', ' ')) = LOWER(REPLACE(:name, '_', ' '))
+                ORDER BY id
+                LIMIT 1
+            """),
+            {"name": campaign_ref},
+        ).mappings().first()
+
+    if campaign_row:
+        campaign_id = campaign_row["id"]
+        campaign_client_id = campaign_row["ClientId"]
+    else:
+        campaign_id = int(campaign_ref) if campaign_ref.isdigit() else None
+        campaign_client_id = None
+
+    if campaign_id is None:
+        raise HTTPException(status_code=404, detail="No data found for campaign")
 
     query = text("""
         SELECT ocd.*
         FROM ob_campaign_data ocd
         JOIN ob_allocation_name a ON a.id = ocd.AllocationId
         WHERE a.CampaignId = :campaign_id
-          AND a.ClientId = :client_id
           AND (ocd.AgentId IS NULL OR ocd.AgentId = :agent_id)
         ORDER BY ocd.id DESC
         LIMIT 1000
@@ -353,8 +395,7 @@ def find_by_phone(
     rows = db.execute(
         query,
         {
-            "campaign_id": CampaignId,
-            "client_id": ClientId,
+            "campaign_id": campaign_id,
             "agent_id": AgentId,
         },
     ).mappings().all()
@@ -373,7 +414,12 @@ def find_by_phone(
             if raw.startswith("91") and len(raw) == 12:
                 raw = raw[2:]
             if raw == phone_digits:
-                return {"AllocationId": record["AllocationId"], "record": record}
+                return {
+                    "AllocationId": record["AllocationId"],
+                    "record": record,
+                    "CampaignId": campaign_id,
+                    "ClientId": campaign_client_id or ClientId,
+                }
 
     raise HTTPException(status_code=404, detail="No data found for phone number")
 

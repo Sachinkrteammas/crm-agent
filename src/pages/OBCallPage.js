@@ -13,9 +13,10 @@ export default function OBCallPage() {
   const urlSourceId = searchParams.get("source_id");
 
   const [clients, setClients] = useState([]);
-  const [selectedClient, setSelectedClient] = useState(
-    localStorage.getItem("company_id") || ""
-  );
+  const [selectedClient, setSelectedClient] = useState(() => {
+    const stored = localStorage.getItem("company_id");
+    return stored && stored !== "null" && stored !== "undefined" ? stored : "";
+  });
 
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaign, setSelectedCampaign] = useState("");
@@ -33,6 +34,7 @@ export default function OBCallPage() {
 
   const [targetDataId, setTargetDataId] = useState(null);
   const phoneResolved = useRef(false);
+  const allocationKeyRef = useRef("");
 
   // Scenario cascade (Label 1 → 5)
   const [scenarioList, setScenarioList] = useState([]);
@@ -92,21 +94,26 @@ export default function OBCallPage() {
     api
       .get("/ob_tags/campaigns", { params: { CLIENT_ID: selectedClient } })
       .then((res) => {
-        setCampaigns(res.data || []);
-        setSelectedCampaign("");
-        setAllocations([]);
-        setSelectedAllocation("");
-        resetDataRow();
+        const list = res.data || [];
+        setCampaigns(list);
         if (urlCampaignId) {
           const val = String(urlCampaignId).toLowerCase();
-          const match = (res.data || []).find(
+          const match = list.find(
             (c) =>
               String(c.campaign_id || "").toLowerCase() === val ||
               String(c.CampaignName || "").toLowerCase() === val ||
               String(c.Type || "").toLowerCase() === val
           );
-          if (match) setSelectedCampaign(String(match.id));
+          if (match) {
+            // Keep any allocation/record already resolved for this campaign
+            setSelectedCampaign(String(match.id));
+            return;
+          }
         }
+        setSelectedCampaign("");
+        setAllocations([]);
+        setSelectedAllocation("");
+        resetDataRow();
       })
       .catch((err) => {
         console.error("Error fetching campaigns:", err);
@@ -118,15 +125,21 @@ export default function OBCallPage() {
     if (!selectedClient || !selectedCampaign) {
       setAllocations([]);
       setSelectedAllocation("");
+      allocationKeyRef.current = "";
       resetDataRow();
       return;
     }
+    const allocationKey = `${selectedClient}:${selectedCampaign}`;
+
     api
       .get("/ob_tags/allocations", {
         params: { CLIENT_ID: selectedClient, campaign: selectedCampaign },
       })
       .then((res) => {
         setAllocations(res.data || []);
+        // Already resolved from the URL for this client+campaign — keep it
+        if (allocationKeyRef.current === allocationKey) return;
+        allocationKeyRef.current = allocationKey;
         setSelectedAllocation("");
         resetDataRow();
       })
@@ -183,19 +196,18 @@ export default function OBCallPage() {
 
   // Resolve phone_number or source_id from URL to an allocation + record
   useEffect(() => {
-    if (
-      !(urlPhone || urlSourceId) ||
-      !selectedClient ||
-      !selectedCampaign ||
-      phoneResolved.current
-    )
-      return;
+    if (!(urlPhone || urlSourceId) || phoneResolved.current) return;
+
+    // Campaign may arrive as an id or a CampaignName; backend resolves it
+    const campaignRef = urlCampaignId || selectedCampaign;
+    if (!campaignRef) return;
+
     phoneResolved.current = true;
     api
       .get("/ob_tags/find_by_phone", {
         params: {
-          ClientId: selectedClient,
-          CampaignId: selectedCampaign,
+          ClientId: selectedClient || undefined,
+          CampaignId: campaignRef,
           phone: urlPhone,
           source_id: urlSourceId,
           AgentId: localStorage.getItem("id"),
@@ -203,7 +215,20 @@ export default function OBCallPage() {
       })
       .then((res) => {
         setTargetDataId(res.data.record ? res.data.record.id : null);
-        setSelectedAllocation(String(res.data.AllocationId));
+        if (res.data.AllocationId) {
+          setSelectedAllocation(String(res.data.AllocationId));
+          allocationKeyRef.current = `${res.data.ClientId || selectedClient}:${
+            res.data.CampaignId
+          }`;
+        }
+        // Resolve client + campaign together so the cascade effects don't clear the record
+        if (res.data.CampaignId) {
+          setSelectedCampaign(String(res.data.CampaignId));
+        }
+        if (!selectedClient && res.data.ClientId) {
+          setSelectedClient(String(res.data.ClientId));
+          localStorage.setItem("company_id", String(res.data.ClientId));
+        }
       })
       .catch((err) => {
         console.error("Record not found:", err);
