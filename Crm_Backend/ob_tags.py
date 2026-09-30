@@ -367,6 +367,7 @@ def find_by_phone(
                 FROM ob_campaign
                 WHERE LOWER(TRIM(CampaignName)) = LOWER(:name)
                    OR LOWER(REPLACE(TRIM(CampaignName), '_', ' ')) = LOWER(REPLACE(:name, '_', ' '))
+                   AND CampaignStatus = 'A'
                 ORDER BY id
                 LIMIT 1
             """),
