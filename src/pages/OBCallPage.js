@@ -12,6 +12,10 @@ export default function OBCallPage() {
   const urlPhone = searchParams.get("phone_number");
   const urlSourceId = searchParams.get("source_id");
 
+  // Dialed via URL (phone_number/source_id) — client, campaign and allocation
+  // are resolved from the record itself, so the selectors must stay locked.
+  const isUrlDriven = !!(urlPhone || urlSourceId);
+
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState(() => {
     const stored = localStorage.getItem("company_id");
@@ -137,6 +141,8 @@ export default function OBCallPage() {
       })
       .then((res) => {
         setAllocations(res.data || []);
+        // URL-driven: allocation comes from find_by_phone, never clear it
+        if (isUrlDriven) return;
         // Already resolved from the URL for this client+campaign — keep it
         if (allocationKeyRef.current === allocationKey) return;
         allocationKeyRef.current = allocationKey;
@@ -200,14 +206,15 @@ export default function OBCallPage() {
 
     // Campaign may arrive as an id or a CampaignName; backend resolves it
     const campaignRef = urlCampaignId || selectedCampaign;
-    if (!campaignRef) return;
+    // source_id uniquely identifies the record — don't block the lookup on campaign
+    if (!campaignRef && !urlSourceId) return;
 
     phoneResolved.current = true;
     api
       .get("/ob_tags/find_by_phone", {
         params: {
           ClientId: selectedClient || undefined,
-          CampaignId: campaignRef,
+          CampaignId: campaignRef || undefined,
           phone: urlPhone,
           source_id: urlSourceId,
           AgentId: localStorage.getItem("id"),
@@ -489,6 +496,10 @@ export default function OBCallPage() {
     campaigns.find((c) => String(c.id) === String(selectedCampaign))
       ?.Fields || [];
 
+  const visibleAllocations = isUrlDriven
+    ? allocations.filter((a) => String(a.id) === String(selectedAllocation))
+    : allocations;
+
   const fieldLabel = (key) => {
     const m = key.match(/^Field(\d+)$/);
     if (m) {
@@ -573,10 +584,14 @@ export default function OBCallPage() {
               className="form-select"
               value={selectedAllocation}
               onChange={(e) => setSelectedAllocation(e.target.value)}
-              disabled={!selectedCampaign}
+              disabled={!selectedCampaign || isUrlDriven}
             >
-              <option value="">Select Allocation</option>
-              {allocations.map((a) => (
+              <option value="">
+                {isUrlDriven
+                  ? "Allocation resolved from call"
+                  : "Select Allocation"}
+              </option>
+              {visibleAllocations.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
