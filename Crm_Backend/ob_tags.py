@@ -319,12 +319,15 @@ def select_ob_campaign_data(
 @router.get("/find_by_phone")
 def find_by_phone(
     ClientId: Optional[int] = Query(None),
-    CampaignId: str = Query(...),
+    CampaignId: Optional[str] = Query(None),
     phone: Optional[str] = Query(None),
     AgentId: Optional[int] = Query(None),
     source_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
+    if not source_id and not CampaignId:
+        raise HTTPException(status_code=422, detail="CampaignId is required when source_id is not provided")
+
     if source_id:
         query = text("""
             SELECT ocd.*,
