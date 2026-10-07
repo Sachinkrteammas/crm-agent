@@ -8,7 +8,8 @@ export default function OBCallPage() {
   const [searchParams] = useSearchParams();
 
   const urlClientId = searchParams.get("client_id");
-  const urlCampaignId = searchParams.get("campaignId");
+  // Campaign may arrive as `campaignId` or `campaign` in the URL
+  const urlCampaignId = searchParams.get("campaignId") || searchParams.get("campaign");
   const urlPhone = searchParams.get("phone_number");
   const urlSourceId = searchParams.get("source_id");
 
