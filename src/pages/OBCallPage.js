@@ -621,7 +621,7 @@ export default function OBCallPage() {
                   setSelectedData(row || null);
                   claimData(row);
                 }}
-                disabled={!selectedAllocation}
+                disabled={!selectedAllocation || isUrlDriven}
               >
                 <option value="">
                   {selectedAllocation

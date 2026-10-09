@@ -58,6 +58,7 @@ export default function AgentDashboard() {
   const [loadingUpdates, setLoadingUpdates] = useState(false);
 
   const [showHistory, setShowHistory] = useState(false);
+  const [isAbandonCallback, setIsAbandonCallback] = useState(false);
   const [callHistory, setCallHistory] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -1365,6 +1366,7 @@ const handleSave = async () => {
       Scenario2: selectedScenario2Label || null,
       Scenario3: selectedScenario3Label || null,
       Scenario4: selectedScenario4Label || null,
+      AbandonCallback: isAbandonCallback ? 1 : 0,
 
       // LeadId: lead_id || null,
       // AgentId: agent_id || null,
@@ -1968,7 +1970,16 @@ const handleSave = async () => {
                 <span className="text-muted">No fields available</span>
               )}
 
-              <div className="col-12 mt-3 text-end">
+              <div className="col-12 mt-3 d-flex align-items-center justify-content-end gap-3">
+                <label className="form-check-label mb-0" style={{ cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    className="form-check-input me-1"
+                    checked={isAbandonCallback}
+                    onChange={(e) => setIsAbandonCallback(e.target.checked)}
+                  />
+                  Abandon Call Back
+                </label>
                 <button
                   type="button"
                   className="btn btn-primary"

@@ -1359,6 +1359,9 @@ async def save_call_master(
     if "callcreated" in payload:
         extra_fields["callcreated"] = payload.get("callcreated")
 
+    if "AbandonCallback" in payload:
+        extra_fields["Field40"] = 1 if payload.get("AbandonCallback") else 0
+
     # 6️⃣ Merge all update fields
     update_fields = {}
     update_fields.update(extra_fields)
