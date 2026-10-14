@@ -393,14 +393,25 @@ def find_by_phone(
         JOIN ob_allocation_name a ON a.id = ocd.AllocationId
         WHERE a.CampaignId = :campaign_id
           AND (ocd.AgentId IS NULL OR ocd.AgentId = :agent_id)
-        ORDER BY ocd.id DESC
-        LIMIT 5000
+          AND ocd.Field1 = :phone
+        ORDER BY ocd.id DESC 
+        LIMIT 1
     """)
+    # query = text("""
+    #     SELECT ocd.*
+    #     FROM ob_campaign_data ocd
+    #     JOIN ob_allocation_name a ON a.id = ocd.AllocationId
+    #     WHERE a.CampaignId = :campaign_id
+    #       AND (ocd.AgentId IS NULL OR ocd.AgentId = :agent_id)
+    #     ORDER BY ocd.id DESC
+    #     LIMIT 5000
+    # """)
     rows = db.execute(
         query,
         {
             "campaign_id": campaign_id,
             "agent_id": AgentId,
+            "phone": phone
         },
     ).mappings().all()
 
