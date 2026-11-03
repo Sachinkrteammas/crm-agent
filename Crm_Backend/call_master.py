@@ -24,6 +24,7 @@ from email.mime.multipart import MIMEMultipart
 from database import get_engine, get_db
 from database import SessionLocal
 router = APIRouter(tags=["Call Master"])
+logger = logging.getLogger(__name__)
 
 @router.get("/call-master/{client_id}", response_model=List[Dict])
 def get_call_master_data(
@@ -1389,7 +1390,7 @@ async def save_call_master(
     db.execute(update_query, update_fields)
     db.commit()
 
-    # 8️⃣ Create alert schedules from alert_mechanism for this call
+    # 8️⃣ Create alert schedules from alert_mechanism for this call.
     row_query = text("""
         SELECT Category1, Category2, Category3, Category4, Category5
         FROM call_master
@@ -1405,14 +1406,36 @@ async def save_call_master(
         "Category5": call_row["Category5"] if call_row else None,
     }
 
-    schedules_created = create_alert_schedules_for_call(db, client_id, record_id, categories)
+    # The call row is already committed above, so a scheduling problem must not
+    # turn a successful save into a 500 (which shows as "Error saving data").
+    try:
+        schedules_created = create_alert_schedules_for_call(
+            db, client_id, record_id, categories
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to create alert schedules for call_master Id=%s client_id=%s",
+            record_id,
+            client_id,
+        )
+        schedules_created = 0
 
     # 9️⃣ Save closeloop alert schedule if a closeloop mechanism exists for the client
-    closeloop_schedules_created = save_closeloop_alert_schedule(
-        db=db,
-        client_id=client_id,
-        data_id=record_id,
-    )
+    try:
+        closeloop_schedules_created = save_closeloop_alert_schedule(
+            db=db,
+            client_id=client_id,
+            data_id=record_id,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to create closeloop schedule for call_master Id=%s client_id=%s",
+            record_id,
+            client_id,
+        )
+        closeloop_schedules_created = 0
 
     return {
         "message": "Data updated successfully",
@@ -2328,7 +2351,7 @@ def save_call_history(
 
     call_date = datetime.now()
 
-    db.execute(
+    insert_result = db.execute(
         text("""
             INSERT INTO call_master
             (
@@ -2363,12 +2386,28 @@ def save_call_history(
 
     db.commit()
 
+    # Return the new row Id so the tagging page can save against it directly
+    # instead of racing a separate /latest-call-id lookup.
+    inserted_id = getattr(insert_result, "lastrowid", None)
+    if not inserted_id:
+        inserted_id = db.execute(
+            text("""
+                SELECT Id
+                FROM call_master
+                WHERE ClientId = :clientId AND SrNo = :srno
+                ORDER BY Id DESC
+                LIMIT 1
+            """),
+            {"clientId": clientId, "srno": next_srno}
+        ).scalar()
+
     return {
         "status": "saved",
         "message": "Call history saved successfully",
         "clientId": clientId,
         "agent_id": agent_id,
         "msisdn": msisdn,
+        "id": inserted_id,
         "sr_no": next_srno,
         "call_date": call_date
     }

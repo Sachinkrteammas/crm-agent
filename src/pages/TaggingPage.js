@@ -50,6 +50,7 @@ export default function AgentDashboard() {
   const agent_id = localStorage.getItem("id");
   const [resolutionHtml, setResolutionHtml] = useState("");
   const isFirstLoad = useRef(true);
+  const initStarted = useRef(false);
 
   const [processUpdates, setProcessUpdates] = useState([]);
   const [loadingUpdates, setLoadingUpdates] = useState(false);
@@ -172,62 +173,70 @@ export default function AgentDashboard() {
   }, [showTrainingHub]);
 
   useEffect(() => {
-    if (!vendor_id) return;
+    if (!vendor_id || initStarted.current) return;
+    initStarted.current = true;
 
-    api
-      .get(`/call/get_client_id/${vendor_id}`)
-      .then((res) => {
-        const cid = res.data.client_id;
+    const initialiseCall = async () => {
+      try {
+        // 1. Resolve the client for this DID/vendor.
+        const clientRes = await api.get(`/call/get_client_id/${vendor_id}`);
+        const cid = clientRes.data.client_id;
         setCompanyId(cid);
-        return api.get(`/call/fields/${cid}`);
-      })
-      .then((res) => {
-        setFields(res.data);
+
+        // 2. Load the dynamic form fields.
+        const fieldsRes = await api.get(`/call/fields/${cid}`);
+        setFields(fieldsRes.data);
         const initialData = {};
-        res.data.forEach((field) => {
+        fieldsRes.data.forEach((field) => {
           initialData[field.FieldName] = "";
         });
         setFormData(initialData);
-      })
-      .catch((err) => console.error("Error fetching client/fields:", err));
-  }, [vendor_id]);
 
-  useEffect(() => {
-    if (!vendor_id) return;
-
-    api
-      .get(`/call/get_client_id/${vendor_id}`)
-      .then(async (res) => {
-        const cid = res.data.client_id;
-        setCompanyId(cid);
-
-        const agent_id = localStorage.getItem("id");
-
-        try {
-          const latestRes = await api.get(`/call/latest-call-id`, {
-            params: {
-              client_id: cid,
-              agent_id: agent_id,
-            },
-          });
-          const latestId = latestRes.data.latest_id;
-          setId(latestId);
-        } catch (err) {
-          console.error("Error fetching latest call id:", err);
+        // 3. Create the call_master row for this call BEFORE looking up its Id.
+        //    This used to run in a separate effect, so /latest-call-id could
+        //    finish first, leave Id as null and make every save fail with
+        //    "Id is required".
+        let recordId = null;
+        if (agent_id && msisdn) {
+          try {
+            const saveRes = await api.post("/call/call-history/save", null, {
+              params: {
+                clientId: Number(cid),
+                agent_id: Number(agent_id),
+                msisdn: msisdn,
+                lead_id: lead_id || null,
+              },
+            });
+            recordId = saveRes.data?.id ?? null;
+          } catch (err) {
+            console.error("Call history save error:", err);
+          }
         }
 
-        return api.get(`/call/fields/${cid}`);
-      })
-      .then((res) => {
-        setFields(res.data);
-        const initialData = {};
-        res.data.forEach((field) => {
-          initialData[field.FieldName] = "";
-        });
-        setFormData(initialData);
-      })
-      .catch((err) => console.error("Error fetching client/fields:", err));
-  }, [vendor_id]);
+        // 4. Fall back to the latest untagged call for this agent.
+        if (!recordId && agent_id) {
+          try {
+            const latestRes = await api.get(`/call/latest-call-id`, {
+              params: {
+                client_id: cid,
+                agent_id: agent_id,
+              },
+            });
+            recordId = latestRes.data?.latest_id ?? null;
+          } catch (err) {
+            console.error("Error fetching latest call id:", err);
+          }
+        }
+
+        setId(recordId);
+      } catch (err) {
+        initStarted.current = false;
+        console.error("Error initialising tagging page:", err);
+      }
+    };
+
+    initialiseCall();
+  }, [vendor_id, agent_id, msisdn, lead_id]);
 
   useEffect(() => {
     const fetchPerformance = async () => {
@@ -261,32 +270,6 @@ export default function AgentDashboard() {
       .then((res) => setAuthPerson(res.data.auth_person))
       .catch((err) => console.error("Error fetching auth person:", err));
   }, [companyId]);
-
-  const callHistorySaved = useRef(false);
-
-  useEffect(() => {
-    if (callHistorySaved.current) return;
-    if (!companyId || !agent_id || !msisdn) return;
-
-    callHistorySaved.current = true;
-
-    const saveCallHistory = async () => {
-      try {
-        const res = await api.post("/call/call-history/save", null, {
-          params: {
-            clientId: Number(companyId),
-            agent_id: Number(agent_id),
-            msisdn: msisdn,
-            lead_id: lead_id || null,
-          },
-        });
-      } catch (err) {
-        callHistorySaved.current = false;
-        console.error("Call history save error:", err);
-      }
-    };
-    saveCallHistory();
-  }, [companyId, agent_id, msisdn, lead_id]);
 
   const [previousCall, setPreviousCall] = useState(null);
 
@@ -821,9 +804,40 @@ export default function AgentDashboard() {
 
   const handleSave = async () => {
     try {
+      // Make sure we have the call_master row to update. Id is resolved when
+      // the page loads, but retry once here in case the call row was created
+      // after the page opened.
+      let recordId = Id;
+      if (!recordId && companyId && agent_id) {
+        try {
+          const latestRes = await api.get(`/call/latest-call-id`, {
+            params: {
+              client_id: companyId,
+              agent_id: agent_id,
+            },
+          });
+          recordId = latestRes.data?.latest_id ?? null;
+          if (recordId) setId(recordId);
+        } catch (err) {
+          console.error("Error fetching latest call id on save:", err);
+        }
+      }
+
+      if (!recordId) {
+        alert(
+          "No active call found to tag. Please reopen the tagging page from the call and try again."
+        );
+        return;
+      }
+
+      if (!companyId) {
+        alert("Client details are still loading. Please wait a moment and try again.");
+        return;
+      }
+
       const payload = {
         ...formData,
-        Id: Id || null,
+        Id: recordId,
         Scenario: selectedScenarioLabel || null,
         Scenario1: selectedScenario1Label || null,
         Scenario2: selectedScenario2Label || null,
@@ -837,8 +851,14 @@ export default function AgentDashboard() {
       alert("Data saved successfully!");
       window.location.href = "/tagging";
     } catch (error) {
-      console.error("Error saving data:", error);
-      alert("Error saving data");
+      const detail = error?.response?.data?.detail;
+      console.error("Error saving data:", error?.response?.data || error);
+      alert(
+        "Error saving data" +
+          (detail
+            ? `: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`
+            : "")
+      );
     }
   };
 
