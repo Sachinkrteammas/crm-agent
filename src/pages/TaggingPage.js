@@ -67,6 +67,8 @@ export default function AgentDashboard() {
   const [externalData, setExternalData] = useState(null);
   const [extLoading, setExtLoading] = useState(false);
   const [extError, setExtError] = useState("");
+  const [manualSearchQuery, setManualSearchQuery] = useState("");
+  const [manualSearchLoading, setManualSearchLoading] = useState(false);
   // ============================================
 
   const rawPhone = searchParams.get("phone_number");
@@ -636,6 +638,32 @@ export default function AgentDashboard() {
   }, [vendor_id, phone, inOUT]);
   // ==========================================
 
+  const handleManualCustomerSearch = async () => {
+    const query = (manualSearchQuery || "").trim();
+    if (!query || !vendor_id) return;
+
+    setManualSearchLoading(true);
+    setExtError("");
+    try {
+      const res = await api.get("/core_api/customer-integration/manual-search", {
+        params: { query, vendor_id },
+      });
+
+      if (res.data.status === "success") {
+        setExternalData(res.data);
+      } else {
+        setExternalData(null);
+        setExtError(res.data.message || "Customer not found in Support System");
+      }
+    } catch (err) {
+      console.error("Manual Customer Search Error:", err);
+      setExternalData(null);
+      setExtError("Failed to search customer details");
+    } finally {
+      setManualSearchLoading(false);
+    }
+  };
+
   const generateCardsFromTranscript = (transcript) => {
     const transcriptLower = transcript.toLowerCase();
     const cards = [];
@@ -963,16 +991,50 @@ export default function AgentDashboard() {
         🎯 Customer Support Details
       </h6>
 
-      {extLoading && (
-        <p style={{ margin: 0, fontSize: "14px" }}>
-          Fetching details...
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          alignItems: "center",
+          marginBottom: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        <input
+          type="text"
+          className="form-control"
+          style={{ maxWidth: "320px", height: "34px", fontSize: "13px" }}
+          placeholder="Search by RMN / Email / Booking ID"
+          value={manualSearchQuery}
+          onChange={(e) => setManualSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleManualCustomerSearch();
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ height: "34px", padding: "0 12px", fontSize: "13px" }}
+          onClick={handleManualCustomerSearch}
+          disabled={manualSearchLoading || !manualSearchQuery.trim()}
+        >
+          {manualSearchLoading ? "Searching..." : "Search"}
+        </button>
+        <span style={{ fontSize: "12px", color: "#555" }}>
+          New number? Search using RMN, Email, or Booking ID
+        </span>
+      </div>
+
+      {(extLoading || manualSearchLoading) && (
+        <p style={{ margin: "0 0 8px 0", fontSize: "14px" }}>
+          {manualSearchLoading ? "Searching customer details..." : "Fetching details..."}
         </p>
       )}
 
-      {extError && !extLoading && (
+      {extError && !extLoading && !manualSearchLoading && (
         <p
           style={{
-            margin: 0,
+            margin: "0 0 8px 0",
             fontSize: "14px",
             color: "#dc3545",
           }}

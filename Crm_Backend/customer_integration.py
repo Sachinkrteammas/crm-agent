@@ -46,6 +46,11 @@ def get_access_token():
 
 def search_customer(phone_number):
     """Search customer by phone number (handles 10/12 digit formats)"""
+    return search_customer_by_query(phone_number, is_phone=True)
+
+
+def search_customer_by_query(query, is_phone=False):
+    """Search customer by phone/email/booking id using support search API"""
     token = get_access_token()
     if not token:
         return None
@@ -53,12 +58,19 @@ def search_customer(phone_number):
     headers = {"Authorization": f"Bearer {token}"}
 
     try:
-        clean_phone = "".join(filter(str.isdigit, str(phone_number)))
-        search_phone = clean_phone[-10:] if len(clean_phone) > 10 else clean_phone
+        raw_query = str(query or "").strip()
+        if not raw_query:
+            return None
+
+        if is_phone:
+            clean_phone = "".join(filter(str.isdigit, raw_query))
+            search_value = clean_phone[-10:] if len(clean_phone) > 10 else clean_phone
+        else:
+            search_value = raw_query
 
         response = requests.get(
             f"{BASE_URL}/support/search",
-            params={"search": search_phone},
+            params={"search": search_value},
             headers=headers,
             timeout=10
         )
@@ -68,10 +80,11 @@ def search_customer(phone_number):
         if data.get("status") == "success" and data.get("data"):
             customers = data["data"]
 
-            for cust in customers:
-                cust_mobile = "".join(filter(str.isdigit, str(cust.get("user_mobile", ""))))
-                if cust_mobile[-10:] == search_phone:
-                    return cust
+            if is_phone:
+                for cust in customers:
+                    cust_mobile = "".join(filter(str.isdigit, str(cust.get("user_mobile", ""))))
+                    if cust_mobile[-10:] == search_value:
+                        return cust
 
             return customers[0]
         return None
