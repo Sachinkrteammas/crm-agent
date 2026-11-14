@@ -5,7 +5,7 @@ import time
 ALLOWED_VENDOR_IDS = ["6904381", "5232717", "4845124"]
 
 # External API Config
-BASE_URL = "http://15.206.232.1:3000/api/v1"
+BASE_URL = "https://api.movodream.com/api/v1"
 SUPPORT_USERNAME = "test_support"
 SUPPORT_PASSWORD = "Support@123"
 
