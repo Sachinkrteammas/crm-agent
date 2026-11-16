@@ -35,6 +35,14 @@ export default function OBCallPage() {
   const [fields, setFields] = useState([]);
   const [formData, setFormData] = useState({});
 
+  // Read-only customer details for Mapple campaigns (Maple000 / MapleBB0)
+  const [mappleInfo, setMappleInfo] = useState({
+    dataId: null,
+    campaign: null,
+    fields: [],
+    error: false,
+  });
+
   const [msisdn, setMsisdn] = useState("");
 
   const [targetDataId, setTargetDataId] = useState(null);
@@ -330,6 +338,44 @@ export default function OBCallPage() {
     return v;
   };
 
+  // Mapple campaigns have a fixed read-only detail panel; the backend only
+  // returns fields for those campaigns, so other campaigns keep the default view.
+  useEffect(() => {
+    if (!selectedData || !selectedClient || !selectedCampaign) {
+      setMappleInfo({ dataId: null, campaign: null, fields: [], error: false });
+      return;
+    }
+    const dataId = selectedData.id;
+    let cancelled = false;
+    api
+      .get("/ob_tags/mapple_customer_details", {
+        params: {
+          ClientId: selectedClient,
+          CampaignId: selectedCampaign,
+          DataId: selectedData.id,
+          phone: extractPhone(selectedData),
+        },
+      })
+      .then((res) => {
+        if (cancelled) return;
+        setMappleInfo({
+          dataId,
+          campaign: (res.data && res.data.campaign) || null,
+          fields: (res.data && res.data.fields) || [],
+          error: false,
+        });
+      })
+      .catch((err) => {
+        console.error("Error fetching Mapple details:", err);
+        if (!cancelled) {
+          setMappleInfo({ dataId, campaign: null, fields: [], error: true });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedData, selectedClient, selectedCampaign]);
+
   const dataRowLabel = (row) => {
     const phone = extractPhone(row);
     const name = [3, 4, 5, 6]
@@ -493,9 +539,20 @@ export default function OBCallPage() {
     clients.find((c) => String(c.company_id) === String(selectedClient))
       ?.company_name || "";
 
+  const selectedCampaignName =
+    campaigns.find((c) => String(c.id) === String(selectedCampaign))
+      ?.CampaignName || "";
+
   const selectedCampaignFields =
     campaigns.find((c) => String(c.id) === String(selectedCampaign))
       ?.Fields || [];
+
+  // Only Mapple campaigns get the fixed read-only customer detail panel.
+  const isMapleCampaign = ["MAPLE000", "MAPLEBB0"].includes(
+    (selectedCampaignName || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+  );
 
   const visibleAllocations = isUrlDriven
     ? allocations.filter((a) => String(a.id) === String(selectedAllocation))
@@ -639,37 +696,82 @@ export default function OBCallPage() {
             {/* Step 2: Tagging form appears after data selection */}
             {selectedData && (
               <div className="mt-4">
-                {/* Selected data details from ob_campaign_data */}
-                <div
-                  className="card mb-3"
-                  style={{ background: "#fff8e1", border: "1px solid #e0e0e0" }}
-                >
-                  <h6 className="card-header">Selected Data Details</h6>
+                {/* Selected data details. Mapple campaigns show only their fixed,
+                    read-only customer fields in the configured order. */}
+                {isMapleCampaign ||
+                (mappleInfo.dataId === selectedData.id && mappleInfo.campaign) ? (
                   <div
-                    style={{
-                      maxHeight: "200px",
-                      overflowY: "auto",
-                      padding: "10px",
-                    }}
+                    className="card mb-3"
+                    style={{ background: "#fff8e1", border: "1px solid #e0e0e0" }}
                   >
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                      <tbody>
-                        {Object.entries(selectedData)
-                          .filter(([, val]) => val !== null && val !== undefined && val !== "")
-                          .map(([key, val]) => (
-                            <tr key={key} style={{ borderBottom: "1px solid #eee" }}>
-                              <td style={{ padding: "6px 8px", fontWeight: 600, color: "#555", whiteSpace: "nowrap" }}>
-                                {fieldLabel(key)}
-                              </td>
-                              <td style={{ padding: "6px 8px", color: "#333", wordBreak: "break-word" }}>
-                                {String(val)}
+                    <h6 className="card-header">Customer Details</h6>
+                    <div
+                      style={{
+                        maxHeight: "260px",
+                        overflowY: "auto",
+                        padding: "10px",
+                      }}
+                    >
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                        <tbody>
+                          {mappleInfo.dataId === selectedData.id &&
+                          mappleInfo.fields.length > 0 ? (
+                            mappleInfo.fields.map((field) => (
+                              <tr key={field.label} style={{ borderBottom: "1px solid #eee" }}>
+                                <td style={{ padding: "6px 8px", fontWeight: 600, color: "#555", whiteSpace: "nowrap" }}>
+                                  {field.label}
+                                </td>
+                                <td style={{ padding: "6px 8px", color: "#333", wordBreak: "break-word" }}>
+                                  {String(field.value)}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={2} style={{ padding: "6px 8px", color: "#777" }}>
+                                {mappleInfo.dataId === selectedData.id &&
+                                mappleInfo.error
+                                  ? "Customer details unavailable"
+                                  : "Loading customer details..."}
                               </td>
                             </tr>
-                          ))}
-                      </tbody>
-                    </table>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div
+                    className="card mb-3"
+                    style={{ background: "#fff8e1", border: "1px solid #e0e0e0" }}
+                  >
+                    <h6 className="card-header">Selected Data Details</h6>
+                    <div
+                      style={{
+                        maxHeight: "200px",
+                        overflowY: "auto",
+                        padding: "10px",
+                      }}
+                    >
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                        <tbody>
+                          {Object.entries(selectedData)
+                            .filter(([, val]) => val !== null && val !== undefined && val !== "")
+                            .map(([key, val]) => (
+                              <tr key={key} style={{ borderBottom: "1px solid #eee" }}>
+                                <td style={{ padding: "6px 8px", fontWeight: 600, color: "#555", whiteSpace: "nowrap" }}>
+                                  {fieldLabel(key)}
+                                </td>
+                                <td style={{ padding: "6px 8px", color: "#333", wordBreak: "break-word" }}>
+                                  {String(val)}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 <div className="row g-3">
                   {renderScenarioSelect(

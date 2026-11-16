@@ -260,6 +260,309 @@ def get_ob_fields(
     return list(fields_dict.values())
 
 
+# ---------------- /mapple_customer_details ----------------
+# Mapple campaigns display a fixed, read-only set of customer details.
+# The order below is the order shown to the agent.
+MAPLE_DETAIL_LABELS = {
+    "MAPLE000": [
+        "Customer Number",
+        "Customer Name",
+        "Device Modle",
+        "Purchase Date",
+        "IMEI",
+        "1st Year Buy Back Value",
+        "2nd Year Buy Back Value",
+        "Store",
+        "Elegibility Period",
+        "Current EUP Status",
+    ],
+    "MAPLEBB0": [
+        "Contact No",
+        "Customer Name",
+        "Quotation No",
+        "Email Address",
+        "Device Model",
+        "Purchase Date",
+        "IMEI",
+        "Store",
+    ],
+}
+
+
+def _normalise_campaign_key(name: Optional[str]) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (name or "").upper())
+
+
+def _phone_digits(value: Optional[str]) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    if digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    return digits[-10:] if len(digits) > 10 else digits
+
+
+DEVICE_KEYWORDS = (
+    "iphone",
+    "ipad",
+    "macbook",
+    "oneplus",
+    "samsung",
+    "galaxy",
+    "redmi",
+    "realme",
+    "vivo",
+    "oppo",
+    "pixel",
+    "moto",
+    "nothing",
+    "nord",
+    "infinix",
+    "iqoo",
+)
+
+SALUTATIONS = {"mr", "mr.", "mrs", "mrs.", "ms", "ms.", "dr", "dr."}
+
+
+def _field_items(record: dict):
+    return [(i, str(record.get(f"Field{i}") or "").strip()) for i in range(1, 26)]
+
+
+def _first(*values) -> str:
+    for value in values:
+        if value is not None and str(value).strip() != "":
+            return str(value).strip()
+    return ""
+
+
+def _join_name(*values) -> str:
+    parts = []
+    for value in values:
+        part = str(value or "").strip()
+        if not part or part.lower() in SALUTATIONS:
+            continue
+        if part.lower() not in " ".join(parts).lower():
+            parts.append(part)
+    return " ".join(parts)
+
+
+def _is_email(value: str) -> bool:
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$", value))
+
+
+def _is_imei(value: str) -> bool:
+    return value.isdigit() and len(value) == 15
+
+
+def _is_imei_fallback(value: str) -> bool:
+    return value.isdigit() and 14 <= len(value) <= 17
+
+
+def _is_date(value: str) -> bool:
+    return bool(
+        re.match(r"^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$", value)
+        or re.match(r"^\d{4}-\d{1,2}-\d{1,2}$", value)
+    )
+
+
+def _is_store(value: str) -> bool:
+    return value.lower().startswith("store")
+
+
+def _is_quotation(value: str) -> bool:
+    if not re.match(r"^[A-Za-z0-9]+$", value) or len(value) < 8:
+        return False
+    # A plain 10 digit number is a phone number, not a quotation id.
+    if value.isdigit() and len(value) == 10:
+        return False
+    return len(re.sub(r"\D", "", value)) >= 4
+
+
+def _find(record: dict, predicate) -> str:
+    for _, value in _field_items(record):
+        if value and predicate(value):
+            return value
+    return ""
+
+
+def _find_device(record: dict) -> str:
+    best, best_score = "", 0
+    for _, value in _field_items(record):
+        low = value.lower()
+        # Skip composite summary fields such as the Field19 quotation text.
+        if (
+            not value
+            or "|" in value
+            or "quotation" in low
+            or len(value) > 60
+            or not any(keyword in low for keyword in DEVICE_KEYWORDS)
+        ):
+            continue
+        score = (2 if re.search(r"\d", value) else 0) + (
+            1 if len(value.split()) >= 2 else 0
+        )
+        if score > best_score:
+            best, best_score = value, score
+    return best
+
+
+def _find_purchase_date(record: dict) -> str:
+    for number in (25, 8, 6):
+        value = str(record.get(f"Field{number}") or "").strip()
+        if _is_date(value):
+            return value
+    value = _find(record, _is_date)
+    if value:
+        return value
+    match = re.search(r"Bought Date:\s*([^|]+)", str(record.get("Field19") or ""))
+    return match.group(1).strip() if match else ""
+
+
+def _record_values(name: str, record: dict, mapple: dict) -> dict:
+    def pick(*numbers) -> str:
+        for number in numbers:
+            value = str(record.get(f"Field{number}") or "").strip()
+            if value:
+                return value
+        return ""
+
+    phone = _first(_phone_digits(pick(1)) or pick(1), mapple.get("phone_number"))
+    email = _first(_find(record, _is_email), mapple.get("email"))
+    device = _first(_find_device(record), mapple.get("extra_column5"))
+    store = _first(_find(record, _is_store), mapple.get("address1"))
+    purchase_date = _first(_find_purchase_date(record), mapple.get("extra_column6"))
+
+    quotation = ""
+    for number in (20, 18):
+        value = str(record.get(f"Field{number}") or "").strip()
+        if value and _is_quotation(value):
+            quotation = value
+            break
+    quotation = _first(quotation, _find(record, _is_quotation), mapple.get("extra_column2"))
+
+    imei = _first(
+        _find(record, _is_imei),
+        _find(record, lambda v: _is_imei_fallback(v) and v != quotation),
+        mapple.get("extra_column3"),
+    )
+
+    if name == "MAPLEBB0":
+        # Most MapleBB0 uploads keep the name in F4 (first) + F5 (last),
+        # some use F2 for the full name.
+        first = pick(4)
+        last = pick(5)
+        if first and not _is_email(first) and not _is_store(first) and not _is_store(last):
+            customer_name = _join_name(first, last)
+        else:
+            customer_name = pick(2)
+        customer_name = _first(customer_name, mapple.get("title"))
+
+        return {
+            "Contact No": phone,
+            "Customer Name": customer_name,
+            "Quotation No": quotation,
+            "Email Address": email,
+            "Device Model": device,
+            "Purchase Date": purchase_date,
+            "IMEI": imei,
+            "Store": store,
+        }
+
+    # Older Maple000 uploads (the ones that use F18/F20 for the quotation)
+    # do not carry the EUP columns at all; F13 there is a PIN code.
+    eup_layout = bool(pick(16) or pick(17))
+
+    def numeric(number) -> str:
+        value = pick(number)
+        return value if re.match(r"^\d+(\.\d+)?$", value) else ""
+
+    return {
+        "Customer Number": phone,
+        "Customer Name": _first(
+            pick(2),
+            _join_name(pick(3), pick(5)),
+            mapple.get("title"),
+            _join_name(mapple.get("first_name"), mapple.get("last_name")),
+        ),
+        "Device Modle": device,
+        "Purchase Date": purchase_date,
+        "IMEI": imei,
+        "1st Year Buy Back Value": _first(
+            numeric(13) if eup_layout else "", mapple.get("postal_code")
+        ),
+        "2nd Year Buy Back Value": _first(
+            numeric(15) if eup_layout else "", mapple.get("gender")
+        ),
+        "Store": store,
+        "Elegibility Period": _first(
+            pick(16) if eup_layout else "", mapple.get("date_of_birth")
+        ),
+        "Current EUP Status": _first(
+            pick(18) if eup_layout else "", mapple.get("security_phrase")
+        ),
+    }
+
+
+@router.get("/mapple_customer_details")
+def get_mapple_customer_details(
+    ClientId: int = Query(...),
+    CampaignId: int = Query(...),
+    DataId: Optional[int] = Query(None),
+    phone: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    campaign = db.execute(
+        text("SELECT CampaignName FROM ob_campaign WHERE id = :cid LIMIT 1"),
+        {"cid": CampaignId},
+    ).mappings().first()
+
+    campaign_key = _normalise_campaign_key(
+        campaign["CampaignName"] if campaign else None
+    )
+    labels = MAPLE_DETAIL_LABELS.get(campaign_key)
+    if not labels:
+        return {"campaign": None, "matched": False, "fields": []}
+
+    record = {}
+    if DataId:
+        row = db.execute(
+            text("""
+                SELECT ocd.*
+                FROM ob_campaign_data ocd
+                LEFT JOIN ob_allocation_name a ON a.id = ocd.AllocationId
+                WHERE ocd.id = :data_id
+                  AND (a.CampaignId = :campaign_id OR a.id IS NULL)
+                LIMIT 1
+            """),
+            {"data_id": DataId, "campaign_id": CampaignId},
+        ).mappings().first()
+        if row:
+            record = dict(row)
+
+    digits = _phone_digits(record.get("Field1") or phone)
+    mapple = {}
+    if digits:
+        row = db.execute(
+            text("""
+                SELECT *
+                FROM mapple_data
+                WHERE client_id = :client_id
+                  AND RIGHT(REPLACE(REPLACE(REPLACE(phone_number, ' ', ''), '-', ''), '+', ''), 10) = :digits
+                ORDER BY (campaign_id = :campaign_id) DESC, id DESC
+                LIMIT 1
+            """),
+            {"client_id": ClientId, "campaign_id": CampaignId, "digits": digits},
+        ).mappings().first()
+        if row:
+            mapple = dict(row)
+
+    values = _record_values(campaign_key, record, mapple)
+
+    return {
+        "campaign": campaign["CampaignName"],
+        "matched": bool(record or mapple),
+        "fields": [{"label": label, "value": values.get(label, "")} for label in labels],
+    }
+
+
 # ---------------- /ob_campaign_data ----------------
 @router.get("/ob_campaign_data", response_model=List[dict])
 def get_ob_campaign_data(

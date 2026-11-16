@@ -16,6 +16,7 @@ _token_cache = {
 }
 
 
+
 def get_access_token():
     """Fetch new token or reuse existing if not expired"""
     current_time = time.time()

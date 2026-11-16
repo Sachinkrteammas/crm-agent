@@ -819,10 +819,6 @@ export default function AgentDashboard() {
     return cards;
   };
 
-  // Note: Baaki AI cards logic (generateCardsFromMetrics, etc.) aur auto-fill logic 
-  // aapke purane code se hi same hai, maine ise short rakha hai taaki message limit cross na ho.
-  // Aap is code ko paste karein, ye purane code ki jagah le lega.
-
   const getInitials = (name) => {
     if (!name) return "";
     const words = name.trim().split(" ");
