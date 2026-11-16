@@ -279,7 +279,7 @@ MAPLE_DETAIL_LABELS = {
     "MAPLEBB0": [
         "Contact No",
         "Customer Name",
-        "Quotation No",
+        "Price",
         "Email Address",
         "Device Model",
         "Purchase Date",
@@ -416,6 +416,172 @@ def _find_purchase_date(record: dict) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _date_key(key) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(key or "").lower())
+
+
+# Entry/update columns that can stand in for a missing purchase date.
+# ob_campaign_data has no created_at; its upload timestamp is CreationDate.
+ENTRY_DATE_KEYS = {
+    _date_key(k)
+    for k in (
+        "modify_date", "modifydate", "modified_date", "modifieddate",
+        "mod_date", "moddate", "modify_dt", "modifydatetime",
+        "updated_date", "updatedate", "updated_at", "updatedat",
+        "last_modified", "lastmodified",
+        "created_at", "createdat", "created_date", "createddate",
+        "creation_date", "creationdate", "created", "createdon",
+        "entry_date", "entrydate", "inserted_at", "insertedat",
+        "upload_date", "uploaddate", "added_on", "addedon", "timestamp",
+    )
+}
+
+
+def _format_display_date(value) -> str:
+    """Turn a date/datetime into a plain date for display; leave dates as-is."""
+    text_value = str(value or "").strip()
+    if not text_value or _is_date(text_value):
+        return text_value
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%d-%m-%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M:%S",
+    ):
+        try:
+            return datetime.strptime(text_value, fmt).strftime("%d-%m-%Y")
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(text_value.replace("Z", "+00:00")).strftime("%d-%m-%Y")
+    except ValueError:
+        return text_value
+
+
+def _find_modify_date(record: dict, mapple: dict) -> str:
+    for source in (record, mapple):
+        if not source:
+            continue
+        # direct/common keys first
+        for key in ("modify_date", "ModifyDate", "modifyDate", "modified_date", "ModifiedDate",
+                    "updated_date", "UpdatedDate", "mod_date", "ModDate", "created_at",
+                    "created_date", "CreatedDate", "creation_date", "CreationDate",
+                    "updated_at", "UpdatedAt", "entry_date", "EntryDate",
+                    "inserted_at", "upload_date", "added_on"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return value
+        # case-insensitive scan for any modify/update/entry-like date key
+        for key, raw in source.items():
+            if raw is None:
+                continue
+            k = _date_key(key)
+            if (
+                k in ENTRY_DATE_KEYS
+                or ("modif" in k and "date" in k)
+                or (k.startswith("mod") and "date" in k)
+                or ("creat" in k and ("date" in k or k.endswith("at")))
+                or ("entry" in k and "date" in k)
+            ):
+                value = str(raw).strip()
+                if value:
+                    return value
+    return ""
+
+
+def _find_price(record: dict, mapple: dict) -> str:
+    def fmt(v: str) -> str:
+        v = str(v or "").strip()
+        if not v:
+            return ""
+        if "₹" in v:
+            m = re.search(r"₹\s*[0-9,]+(?:\.\d+)?", v)
+            return m.group(0).replace(" ", "") if m else v
+        if re.match(r"^[0-9,]+(?:\.\d{1,2})?$", v):
+            return f"₹{v}"
+        return v
+
+    # 1) explicit named keys
+    for source in (record, mapple):
+        if not source:
+            continue
+        for key in ("price", "Price", "amount", "Amount", "premium", "Premium",
+                    "plan_price", "PlanPrice", "buyback_price", "BuyBackPrice"):
+            value = str(source.get(key) or "").strip()
+            if value:
+                return fmt(value)
+        for key, raw in source.items():
+            if raw is None:
+                continue
+            k = str(key).strip().lower()
+            if "price" in k or "amount" in k:
+                value = str(raw).strip()
+                if value and not _is_imei_fallback(value):
+                    return fmt(value)
+
+    # 2) composite/text values that explicitly label price (record fields + mapple text fields)
+    def iter_text_values():
+        for _, value in _field_items(record):
+            if value:
+                yield value
+        for source in (record, mapple):
+            if not source:
+                continue
+            for key, raw in source.items():
+                if raw is None:
+                    continue
+                if str(key).startswith("Field"):
+                    continue
+                value = str(raw).strip()
+                if value:
+                    yield value
+
+    for value in iter_text_values():
+        if len(value) < 3:
+            continue
+        m = re.search(r"(?:Price|Amount|Premium)\s*[:\-]?\s*(₹\s*[0-9,]+|[0-9,]{2,7})", value, re.I)
+        if m:
+            return fmt(m.group(1))
+        if "₹" in value:
+            m2 = re.search(r"₹\s*[0-9,]+(?:\.\d+)?", value)
+            if m2:
+                return m2.group(0).replace(" ", "")
+
+    # 3) mapple extra columns (common place for amounts/prices), prefer later extras
+    for key in ("extra_column12", "extra_column11", "extra_column10", "extra_column9",
+                "extra_column8", "extra_column7", "extra_column4"):
+        value = str(mapple.get(key) or "").strip()
+        if value and re.match(r"^[0-9,]{3,7}(?:\.\d{1,2})?$", value):
+            return fmt(value)
+
+    # 4) standalone reasonable amount from record fields (avoid phone/imei/quotation-like IDs)
+    candidates = []
+    for idx, value in _field_items(record):
+        if not value:
+            continue
+        if not re.match(r"^[0-9,]{3,7}(?:\.\d{1,2})?$", value):
+            continue
+        digits = re.sub(r"\D", "", value)
+        if len(digits) == 10 or _is_imei_fallback(digits):
+            continue
+        if _is_quotation(value):
+            continue
+        # prefer mid-sized amounts (prices) over tiny/huge numbers
+        score = 0
+        if 3 <= len(digits) <= 6:
+            score += 3
+        if idx >= 15:
+            score += 1
+        candidates.append((score, idx, value))
+    if candidates:
+        candidates.sort(key=lambda x: (-x[0], x[1]))
+        return fmt(candidates[0][2])
+
+    return ""
+
+
 def _record_values(name: str, record: dict, mapple: dict) -> dict:
     def pick(*numbers) -> str:
         for number in numbers:
@@ -455,13 +621,21 @@ def _record_values(name: str, record: dict, mapple: dict) -> dict:
             customer_name = pick(2)
         customer_name = _first(customer_name, mapple.get("title"))
 
+        # Some uploads carry no purchase date at all. Fall back to the
+        # modification/upload (entry) timestamp instead of showing it blank.
+        modify_date = _first(
+            _format_display_date(purchase_date),
+            _format_display_date(_find_modify_date(record, mapple)),
+        )
+        price = _first(_find_price(record, mapple), quotation)
+
         return {
             "Contact No": phone,
             "Customer Name": customer_name,
-            "Quotation No": quotation,
+            "Price": price,
             "Email Address": email,
             "Device Model": device,
-            "Purchase Date": purchase_date,
+            "Purchase Date": modify_date,
             "IMEI": imei,
             "Store": store,
         }
