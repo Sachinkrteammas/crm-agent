@@ -46,6 +46,9 @@ export default function OBCallPage() {
   const [msisdn, setMsisdn] = useState("");
 
   const [targetDataId, setTargetDataId] = useState(null);
+  // Full record resolved from the URL (phone_number/source_id). URL-driven calls
+  // must tag exactly this record, never a fallback row from the allocation.
+  const [targetRecord, setTargetRecord] = useState(null);
   const phoneResolved = useRef(false);
   const allocationKeyRef = useRef("");
 
@@ -189,17 +192,40 @@ export default function OBCallPage() {
       })
       .then((res) => {
         const rows = res.data || [];
+
+        // URL-driven (phone_number / source_id): only the resolved record may be
+        // selected. Falling back to another row would show a different customer.
+        if (isUrlDriven) {
+          const row =
+            rows.find((r) => String(r.id) === String(targetDataId)) ||
+            (targetRecord &&
+            (!targetDataId || String(targetRecord.id) === String(targetDataId))
+              ? targetRecord
+              : null);
+          if (!row) {
+            setDataRows([]);
+            resetDataRow();
+            return;
+          }
+          setDataRows(
+            rows.some((r) => String(r.id) === String(row.id))
+              ? rows
+              : [row, ...rows]
+          );
+          setSelectedData(row);
+          claimData(row);
+          return;
+        }
+
         setDataRows(rows);
         if (rows.length === 0) {
           resetDataRow();
           return;
         }
         const row =
-          rows.find((r) => String(r.id) === String(targetDataId)) ||
           rows.find(
             (r) => r.AgentId === null || r.AgentId === undefined
-          ) ||
-          rows[0];
+          ) || rows[0];
         setSelectedData(row);
         claimData(row);
       })
@@ -231,6 +257,7 @@ export default function OBCallPage() {
       })
       .then((res) => {
         setTargetDataId(res.data.record ? res.data.record.id : null);
+        setTargetRecord(res.data.record || null);
         if (res.data.AllocationId) {
           setSelectedAllocation(String(res.data.AllocationId));
           allocationKeyRef.current = `${res.data.ClientId || selectedClient}:${
@@ -249,13 +276,14 @@ export default function OBCallPage() {
       .catch((err) => {
         console.error("Record not found:", err);
         setTargetDataId(null);
+        setTargetRecord(null);
       });
   }, [selectedClient, selectedCampaign]);
 
   // Fetch data records once allocation is selected
   useEffect(() => {
     fetchDataRows();
-  }, [selectedAllocation, targetDataId]);
+  }, [selectedAllocation, targetDataId, targetRecord]);
 
   // Fetch dynamic fields + Level 1 scenarios once a data row is selected
   useEffect(() => {

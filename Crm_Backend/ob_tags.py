@@ -864,14 +864,24 @@ def find_by_phone(
     if campaign_id is None:
         raise HTTPException(status_code=404, detail="No data found for campaign")
 
+    phone_digits = _phone_digits(phone)
+    if not phone_digits:
+        raise HTTPException(status_code=422, detail="A valid phone number is required")
+
+    # Match on the normalised last 10 digits so stored values with a 91/+91
+    # prefix, spaces, dashes or brackets still resolve to the dialled number.
     query = text("""
         SELECT ocd.*
         FROM ob_campaign_data ocd
         JOIN ob_allocation_name a ON a.id = ocd.AllocationId
         WHERE a.CampaignId = :campaign_id
-          AND ocd.Field1 = :phone
-        ORDER BY ocd.id DESC 
-        LIMIT 1
+          AND RIGHT(
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                  ocd.Field1, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''),
+                10
+              ) = :digits
+        ORDER BY ocd.id DESC
+        LIMIT 5
     """)
     # query = text("""
     #     SELECT ocd.*
@@ -886,13 +896,9 @@ def find_by_phone(
         query,
         {
             "campaign_id": campaign_id,
-            "phone": phone
+            "digits": phone_digits,
         },
     ).mappings().all()
-
-    phone_digits = re.sub(r"\D", "", phone)
-    if phone_digits.startswith("91") and len(phone_digits) == 12:
-        phone_digits = phone_digits[2:]
 
     for row in rows:
         record = dict(row)
